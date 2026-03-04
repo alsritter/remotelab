@@ -276,6 +276,12 @@ export function sendMessage(sessionId, text, images, options = {}) {
   if (options.thinking) {
     spawnOptions.thinking = true;
   }
+  if (options.model) {
+    spawnOptions.model = options.model;
+  }
+  if (options.effort) {
+    spawnOptions.effort = options.effort;
+  }
 
   // If a compact/drop-tools context exists, inject it as preamble in the first new message
   let actualText = text;
@@ -284,7 +290,7 @@ export function sendMessage(sessionId, text, images, options = {}) {
     live.compactContext = undefined;
   }
 
-  console.log(`[session-mgr] Spawning tool=${effectiveTool} folder=${session.folder} thinking=${!!options.thinking}`);
+  console.log(`[session-mgr] Spawning tool=${effectiveTool} model=${options.model || 'default'} effort=${options.effort || 'default'} thinking=${!!options.thinking}`);
   const runner = spawnTool(effectiveTool, session.folder, actualText, onEvent, onExit, spawnOptions);
   live.runner = runner;
 }

@@ -188,6 +188,13 @@ export function buildCodexArgs(prompt, options = {}) {
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
 
+  if (options.model) {
+    args.push('-m', options.model);
+  }
+  if (options.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort=${options.reasoningEffort}`);
+  }
+
   const effectivePrompt = CODEX_SYSTEM_PREFIX + prompt;
 
   if (options.threadId) {

@@ -28,6 +28,8 @@
   const imgFileInput = document.getElementById("imgFileInput");
   const imgPreviewStrip = document.getElementById("imgPreviewStrip");
   const inlineToolSelect = document.getElementById("inlineToolSelect");
+  const inlineModelSelect = document.getElementById("inlineModelSelect");
+  const effortSelect = document.getElementById("effortSelect");
   const thinkingToggle = document.getElementById("thinkingToggle");
   const cancelBtn = document.getElementById("cancelBtn");
   const contextTokens = document.getElementById("contextTokens");
@@ -55,6 +57,11 @@
   let selectedTool = localStorage.getItem("selectedTool") || null;
   // Default thinking to enabled; only disable if explicitly set to 'false'
   let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
+  // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
+  let selectedModel = null;
+  let selectedEffort = null;
+  let currentToolModels = []; // model list for current tool
+  let currentToolEffortLevels = null; // null = binary toggle, string[] = effort dropdown
   let sidebarCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
   let toolsList = [];
   let isDesktop = window.matchMedia("(min-width: 768px)").matches;
@@ -144,7 +151,7 @@
     onBreakpointChange(mq);
   }
 
-  // ---- Thinking toggle ----
+  // ---- Thinking toggle / effort select ----
   function updateThinkingUI() {
     thinkingToggle.classList.toggle("active", thinkingEnabled);
   }
@@ -154,6 +161,11 @@
     thinkingEnabled = !thinkingEnabled;
     localStorage.setItem("thinkingEnabled", thinkingEnabled);
     updateThinkingUI();
+  });
+
+  effortSelect.addEventListener("change", () => {
+    selectedEffort = effortSelect.value;
+    if (selectedTool) localStorage.setItem(`selectedEffort_${selectedTool}`, selectedEffort);
   });
 
   // ---- Sidebar collapse (desktop) ----
@@ -181,12 +193,97 @@
       } else if (toolsList.length > 0) {
         selectedTool = toolsList[0].id;
       }
+      await loadModelsForCurrentTool();
     } catch {}
   }
 
-  inlineToolSelect.addEventListener("change", () => {
+  inlineToolSelect.addEventListener("change", async () => {
     selectedTool = inlineToolSelect.value;
     localStorage.setItem("selectedTool", selectedTool);
+    await loadModelsForCurrentTool();
+  });
+
+  // ---- Model select ----
+  async function loadModelsForCurrentTool() {
+    if (!selectedTool) {
+      inlineModelSelect.innerHTML = "";
+      inlineModelSelect.style.display = "none";
+      return;
+    }
+    try {
+      const res = await fetch(`/api/models?tool=${encodeURIComponent(selectedTool)}`);
+      const data = await res.json();
+      currentToolModels = data.models || [];
+      currentToolEffortLevels = data.effortLevels || null;
+
+      // Populate model dropdown
+      inlineModelSelect.innerHTML = "";
+      const defaultOpt = document.createElement("option");
+      defaultOpt.value = "";
+      defaultOpt.textContent = "default";
+      inlineModelSelect.appendChild(defaultOpt);
+      for (const m of currentToolModels) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        inlineModelSelect.appendChild(opt);
+      }
+      // Restore saved model for this tool
+      selectedModel = localStorage.getItem(`selectedModel_${selectedTool}`) || "";
+      if (selectedModel && currentToolModels.some((m) => m.id === selectedModel)) {
+        inlineModelSelect.value = selectedModel;
+      } else {
+        inlineModelSelect.value = "";
+        selectedModel = "";
+      }
+      inlineModelSelect.style.display = currentToolModels.length > 0 ? "" : "none";
+
+      // Show thinking toggle (Claude) or effort dropdown (Codex)
+      if (currentToolEffortLevels) {
+        // Effort-based tool (Codex)
+        thinkingToggle.style.display = "none";
+        effortSelect.style.display = "";
+        effortSelect.innerHTML = "";
+        for (const level of currentToolEffortLevels) {
+          const opt = document.createElement("option");
+          opt.value = level;
+          opt.textContent = level;
+          effortSelect.appendChild(opt);
+        }
+        // Restore saved effort or use model's default
+        selectedEffort = localStorage.getItem(`selectedEffort_${selectedTool}`) || "";
+        const currentModelData = currentToolModels.find((m) => m.id === selectedModel);
+        if (selectedEffort && currentToolEffortLevels.includes(selectedEffort)) {
+          effortSelect.value = selectedEffort;
+        } else if (currentModelData?.defaultEffort) {
+          effortSelect.value = currentModelData.defaultEffort;
+          selectedEffort = currentModelData.defaultEffort;
+        } else if (currentToolModels[0]?.defaultEffort) {
+          effortSelect.value = currentToolModels[0].defaultEffort;
+          selectedEffort = currentToolModels[0].defaultEffort;
+        }
+      } else {
+        // Toggle-based tool (Claude)
+        thinkingToggle.style.display = "";
+        effortSelect.style.display = "none";
+        selectedEffort = null;
+      }
+    } catch {
+      inlineModelSelect.style.display = "none";
+    }
+  }
+
+  inlineModelSelect.addEventListener("change", () => {
+    selectedModel = inlineModelSelect.value;
+    if (selectedTool) localStorage.setItem(`selectedModel_${selectedTool}`, selectedModel);
+    // Update default effort when model changes (Codex)
+    if (currentToolEffortLevels && selectedModel) {
+      const modelData = currentToolModels.find((m) => m.id === selectedModel);
+      if (modelData?.defaultEffort && !localStorage.getItem(`selectedEffort_${selectedTool}`)) {
+        effortSelect.value = modelData.defaultEffort;
+        selectedEffort = modelData.defaultEffort;
+      }
+    }
   });
 
   // ---- WebSocket ----
@@ -343,7 +440,9 @@
     cancelBtn.style.display = isRunning && hasSession ? "flex" : "none";
     imgBtn.disabled = !hasSession;
     inlineToolSelect.disabled = !hasSession;
+    inlineModelSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
+    effortSelect.disabled = !hasSession;
   }
 
   // ---- Message rendering ----
@@ -794,12 +893,18 @@
     sendBtn.disabled = false;
     imgBtn.disabled = false;
     inlineToolSelect.disabled = false;
+    inlineModelSelect.disabled = false;
     thinkingToggle.disabled = false;
+    effortSelect.disabled = false;
 
     if (session?.tool && toolsList.some((t) => t.id === session.tool)) {
       inlineToolSelect.value = session.tool;
+      const prevTool = selectedTool;
       selectedTool = session.tool;
       localStorage.setItem("selectedTool", selectedTool);
+      if (prevTool !== selectedTool) {
+        loadModelsForCurrentTool();
+      }
     }
 
     restoreDraft();
@@ -987,7 +1092,14 @@
     if ((!text && pendingImages.length === 0) || !currentSessionId) return;
     const msg = { action: "send", text: text || "(image)" };
     if (selectedTool) msg.tool = selectedTool;
-    msg.thinking = thinkingEnabled;
+    if (selectedModel) msg.model = selectedModel;
+    if (currentToolEffortLevels) {
+      // Codex: send effort level (always), skip thinking flag
+      if (selectedEffort) msg.effort = selectedEffort;
+    } else {
+      // Claude: send thinking toggle
+      msg.thinking = thinkingEnabled;
+    }
     if (pendingImages.length > 0) {
       msg.images = pendingImages.map((img) => ({
         data: img.data,

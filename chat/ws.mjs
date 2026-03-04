@@ -155,6 +155,8 @@ function handleMessage(ws, msg, ctx) {
       sendMessage(sessionId, msg.text.trim(), msg.images, {
         tool: msg.tool || undefined,
         thinking: !!msg.thinking,
+        model: msg.model || undefined,
+        effort: msg.effort || undefined,
       });
       break;
     }

@@ -12,6 +12,7 @@ import { getAvailableTools } from '../lib/tools.mjs';
 import { listSessions, getSession, createSession, deleteSession } from './session-manager.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
+import { getModelsForTool } from './models.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
   getClientIp, isRateLimited, recordFailedAttempt, clearFailedAttempts,
@@ -196,6 +197,14 @@ export async function handleRequest(req, res) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Session not found' }));
     }
+    return;
+  }
+
+  if (pathname === '/api/models' && req.method === 'GET') {
+    const toolId = url.query ? new URLSearchParams(url.query).get('tool') || '' : '';
+    const result = await getModelsForTool(toolId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
     return;
   }
 

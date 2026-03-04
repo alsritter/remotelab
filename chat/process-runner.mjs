@@ -115,17 +115,21 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
       dangerouslySkipPermissions: true,
       resume: options.claudeSessionId,
       thinking: options.thinking,
+      model: options.model,
     });
   } else if (isCodexFamily) {
     adapter = createCodexAdapter();
     args = buildCodexArgs(effectivePrompt, {
       threadId: options.codexThreadId,
+      model: options.model,
+      reasoningEffort: options.effort,
     });
   } else {
     adapter = createClaudeAdapter();
     args = buildClaudeArgs(effectivePrompt, {
       dangerouslySkipPermissions: true,
       thinking: options.thinking,
+      model: options.model,
     });
   }
 

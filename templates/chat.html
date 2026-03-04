@@ -529,12 +529,15 @@ body {
   padding: 8px 12px 6px;
   border-bottom: 1px solid var(--border);
 }
-.tool-select {
+.tool-select, .model-select, .effort-select {
   padding: 3px 7px; background: transparent; border: 1px solid var(--border);
   border-radius: 5px; color: var(--text-secondary); font-size: 12px; outline: none;
-  max-width: 130px; cursor: pointer; font-family: inherit;
+  cursor: pointer; font-family: inherit;
 }
-.tool-select:focus { border-color: var(--border-strong); }
+.tool-select { max-width: 100px; }
+.model-select { max-width: 120px; }
+.effort-select { max-width: 80px; }
+.tool-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
 .thinking-toggle {
   padding: 3px 9px; background: transparent; border: 1px solid var(--border);
   border-radius: 5px; color: var(--text-muted); font-size: 12px;
@@ -694,7 +697,9 @@ body {
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
         <div class="input-config-row">
           <select class="tool-select" id="inlineToolSelect" disabled></select>
+          <select class="model-select" id="inlineModelSelect" disabled></select>
           <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
+          <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
           <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
         </div>
         <div class="input-row">

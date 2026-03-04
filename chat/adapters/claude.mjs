@@ -146,10 +146,11 @@ export function buildClaudeArgs(prompt, options = {}) {
     args.push('--dangerously-skip-permissions');
   }
 
-  // Thinking: Claude Code enables extended thinking automatically on supported models.
-  // When thinking is requested, we use a model that supports it.
+  if (options.model) {
+    args.push('--model', options.model);
+  }
   if (options.thinking) {
-    args.push('--model', 'sonnet');
+    args.push('--effort', 'high');
   }
 
   return args;
