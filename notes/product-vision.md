@@ -1,6 +1,6 @@
 # RemoteLab Product Vision
 
-_Last updated: 2026-03-01_
+_Last updated: 2026-03-06_
 
 ---
 
@@ -170,10 +170,43 @@ Completed: Cleaned up env var loading in lib/config.mjs
 
 ## 待决策事项
 
-- [ ] Sidebar v1 的触发机制选哪个方案
+- [x] Sidebar v1 的触发机制选哪个方案 — **已选定 onExit 触发，v1 已实现**
 - [ ] 移动端场景优先级（等实际使用数据再定）
 - [ ] 分层输出（Post-LLM 处理）何时排进迭代
 - [ ] 埋点系统是否需要（低优先级，先把产品方向定了）
+
+---
+
+## App 系统实现状态（2026-03-06）
+
+App 系统是 RemoteLab 作为 Agent 分发工具的核心——让 Owner 创建可分享的 AI 工作流，Visitor 通过链接使用。
+
+### 已完成
+
+| 能力 | 实现位置 | 状态 |
+|------|----------|------|
+| App 数据模型 (id, name, systemPrompt, skills, tool, shareToken) | `chat/apps.mjs` | ✅ 生产 |
+| App CRUD API (GET/POST/PATCH/DELETE `/api/apps`) | `chat/router.mjs:409-496` | ✅ 生产 |
+| Share token 生成与查找 | `chat/apps.mjs` | ✅ 生产 |
+| Visitor 入口 (`GET /app/{shareToken}`) | `chat/router.mjs:142-179` | ✅ 生产 |
+| Visitor auth session (role=visitor, scoped to appId+sessionId) | `chat/router.mjs` + `lib/auth.mjs` | ✅ 生产 |
+| systemPrompt 注入到首条消息 | `chat/session-manager.mjs:396-404` | ✅ 生产 |
+| 前端 visitor mode (隐藏 sidebar, 自动 attach session) | `static/chat.js` + `templates/chat.html` | ✅ 生产 |
+| Auth info endpoint (`/api/auth/me`) | `chat/router.mjs:499-515` | ✅ 生产 |
+| Owner session list 隐藏 visitor session | `chat/session-manager.mjs:97` | ✅ 生产 |
+
+### 待实现
+
+| 能力 | 优先级 | 备注 |
+|------|--------|------|
+| Visitor "新对话"按钮 | P1 | 当前每次需要重新点击 share link |
+| Owner 的 App 管理 UI | P2 | 目前只能通过 API 或 agent 对话创建 App |
+| 多 App 门户页 | P2 | 如果要分享多个 App，需要一个入口页 |
+| App 使用统计 | P3 | visitor session 数据已保留，但无分析 |
+
+### 验证记录
+
+2026-03-06 在测试服务 (7692) 上创建了 "English Tutor Demo" App，通过 curl 验证了完整 visitor flow：share link → session 创建 → auth cookie → visitor mode redirect → systemPrompt 注入。前端 visitor mode 待真机浏览器验证。
 
 ---
 
