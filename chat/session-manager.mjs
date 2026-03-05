@@ -246,16 +246,19 @@ export function sendMessage(sessionId, text, images, options = {}) {
   let live = liveSessions.get(sessionId);
   if (!live) {
     live = { status: 'idle', runner: null, listeners: new Set() };
-    // Rehydrate resume IDs from persisted metadata (survives server restarts)
-    if (session.claudeSessionId) {
-      live.claudeSessionId = session.claudeSessionId;
-      console.log(`[session-mgr] Rehydrated claudeSessionId=${session.claudeSessionId} from disk for session ${sessionId.slice(0,8)}`);
-    }
-    if (session.codexThreadId) {
-      live.codexThreadId = session.codexThreadId;
-      console.log(`[session-mgr] Rehydrated codexThreadId=${session.codexThreadId} from disk for session ${sessionId.slice(0,8)}`);
-    }
     liveSessions.set(sessionId, live);
+  }
+
+  // Rehydrate resume IDs from persisted metadata if not already in memory.
+  // This must run even if `live` was already created (e.g. by subscribe/attach),
+  // because subscribe creates a bare entry without resume IDs.
+  if (!live.claudeSessionId && session.claudeSessionId) {
+    live.claudeSessionId = session.claudeSessionId;
+    console.log(`[session-mgr] Rehydrated claudeSessionId=${session.claudeSessionId} from disk for session ${sessionId.slice(0,8)}`);
+  }
+  if (!live.codexThreadId && session.codexThreadId) {
+    live.codexThreadId = session.codexThreadId;
+    console.log(`[session-mgr] Rehydrated codexThreadId=${session.codexThreadId} from disk for session ${sessionId.slice(0,8)}`);
   }
 
   console.log(`[session-mgr] live state: status=${live.status}, hasRunner=${!!live.runner}, claudeSessionId=${live.claudeSessionId || 'none'}, codexThreadId=${live.codexThreadId || 'none'}, listeners=${live.listeners.size}`);
