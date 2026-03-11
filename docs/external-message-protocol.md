@@ -121,6 +121,8 @@ Required fields:
 Useful optional fields for connectors:
 
 - `name` — initial session title
+- `appId` — stable app/category id for owner-side session filtering; defaults to `chat`
+- `appName` — human-facing label for that `appId`, such as `GitHub` or `Email`
 - `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
 - `description` — short human-facing description
 - `systemPrompt` — source-specific guidance for this session
@@ -137,6 +139,8 @@ curl -sS \
     "folder": "~",
     "tool": "codex",
     "name": "GitHub: owner/repo#123",
+    "appId": "github",
+    "appName": "GitHub",
     "group": "GitHub",
     "description": "External GitHub thread bridged into RemoteLab.",
     "externalTriggerId": "github:owner/repo#123"
@@ -147,6 +151,7 @@ Important behavior:
 
 - if an unarchived session with the same `externalTriggerId` already exists, RemoteLab returns that session instead of creating a new one
 - this is the main dedupe mechanism for “one external thread → one RemoteLab session”
+- the owner sidebar app filter derives its options from session metadata rather than a hardcoded frontend list; if every session is still in the default `chat` app, the filter stays hidden
 
 ---
 

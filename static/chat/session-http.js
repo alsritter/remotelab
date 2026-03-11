@@ -233,12 +233,7 @@ function upsertSession(session) {
 
 async function fetchAppsList() {
   if (visitorMode) return [];
-  try {
-    const data = await fetchJsonOrRedirect("/api/apps");
-    refreshAppCatalog(data.apps || []);
-  } catch {
-    refreshAppCatalog();
-  }
+  refreshAppCatalog();
   return appCatalog;
 }
 

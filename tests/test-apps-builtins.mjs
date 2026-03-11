@@ -24,13 +24,13 @@ const {
 try {
   const initial = await listApps();
   assert.deepEqual(
-    initial.slice(0, 5).map((app) => app.id),
-    ['chat', 'feishu', 'email', 'github', 'automation'],
-    'built-in apps should be listed first for owner filters',
+    initial.map((app) => app.id),
+    ['chat'],
+    'built-in apps should default to the owner chat app only',
   );
   assert.equal(DEFAULT_APP_ID, 'chat');
   assert.equal(isBuiltinAppId('Chat'), true);
-  assert.equal(isBuiltinAppId('github'), true);
+  assert.equal(isBuiltinAppId('github'), false);
   assert.equal(isBuiltinAppId('custom-app'), false);
 
   const chatApp = await getApp('chat');
@@ -38,15 +38,7 @@ try {
   assert.equal(chatApp?.name, 'Chat');
   assert.equal(chatApp?.builtin, true);
 
-  const larkApp = await getApp('feishu');
-  assert.equal(larkApp?.name, 'Lark');
-
-  const emailApp = await getApp('email');
-  assert.equal(emailApp?.name, 'Email');
-
-  const automationApp = await getApp('automation');
-  assert.equal(automationApp?.name, 'Automation');
-  assert.equal(automationApp?.builtin, true);
+  assert.equal(await getApp('feishu'), null);
 
   const custom = await createApp({
     name: 'Docs Portal',
@@ -70,7 +62,7 @@ try {
   assert.equal(afterCreate.some((app) => app.id === defaultToolApp.id), true);
 
   assert.equal(await updateApp('chat', { name: 'Owner Console' }), null);
-  assert.equal(await deleteApp('github'), false);
+  assert.equal(await deleteApp('chat'), false);
 } finally {
   rmSync(tempHome, { recursive: true, force: true });
 }

@@ -132,10 +132,10 @@ async function main() {
     const apps = await request(port, 'GET', '/api/apps');
     assert.equal(apps.status, 200, 'owner apps endpoint should be available');
     assert.match(apps.text, /"id":"chat"/);
-    assert.match(apps.text, /"id":"feishu"/);
-    assert.match(apps.text, /"id":"email"/);
-    assert.match(apps.text, /"id":"github"/);
-    assert.match(apps.text, /"id":"automation"/);
+    assert.doesNotMatch(apps.text, /"id":"feishu"/);
+    assert.doesNotMatch(apps.text, /"id":"email"/);
+    assert.doesNotMatch(apps.text, /"id":"github"/);
+    assert.doesNotMatch(apps.text, /"id":"automation"/);
 
     const createdChat = await request(port, 'POST', '/api/sessions', {
       folder: home,
@@ -149,12 +149,14 @@ async function main() {
       tool: 'codex',
       name: 'GitHub session',
       appId: 'github',
+      appName: 'GitHub',
     });
     assert.equal(createdGithub.status, 201, 'GitHub-scoped session should be creatable over HTTP');
 
     const githubOnly = await request(port, 'GET', '/api/sessions?appId=github');
     assert.equal(githubOnly.status, 200, 'app-filtered session list should load');
     assert.match(githubOnly.text, /"appId":"github"/);
+    assert.match(githubOnly.text, /"appName":"GitHub"/);
     assert.doesNotMatch(githubOnly.text, /"name":"Owner chat session"/);
 
     const splitAsset = await request(port, 'GET', '/chat/bootstrap.js');

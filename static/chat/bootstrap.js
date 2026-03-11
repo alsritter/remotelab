@@ -71,14 +71,7 @@ const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const ACTIVE_APP_FILTER_STORAGE_KEY = "activeAppFilter";
 const APP_FILTER_ALL_VALUE = "__all__";
 const DEFAULT_APP_ID = "chat";
-const BUILTIN_APP_LABELS = {
-  chat: "Chat",
-  feishu: "Lark",
-  email: "Email",
-  github: "GitHub",
-  automation: "Automation",
-};
-const BUILTIN_APP_ORDER = Object.keys(BUILTIN_APP_LABELS);
+const DEFAULT_APP_NAME = "Chat";
 let pendingNavigationState = readNavigationStateFromLocation();
 let currentSessionId =
   pendingNavigationState.sessionId ||
@@ -297,10 +290,8 @@ function normalizeAppId(appId, { fallbackDefault = false } = {}) {
   if (!trimmed) {
     return fallbackDefault ? DEFAULT_APP_ID : "";
   }
-  const builtinId = trimmed.toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(BUILTIN_APP_LABELS, builtinId)) {
-    return builtinId;
-  }
+  const normalizedDefault = trimmed.toLowerCase();
+  if (normalizedDefault === DEFAULT_APP_ID) return DEFAULT_APP_ID;
   return trimmed;
 }
 
@@ -316,8 +307,8 @@ function persistActiveAppFilter(appId) {
 
 function formatAppNameFromId(appId) {
   const normalized = normalizeAppId(appId);
-  if (!normalized) return BUILTIN_APP_LABELS[DEFAULT_APP_ID];
-  if (BUILTIN_APP_LABELS[normalized]) return BUILTIN_APP_LABELS[normalized];
+  if (!normalized) return DEFAULT_APP_NAME;
+  if (normalized === DEFAULT_APP_ID) return DEFAULT_APP_NAME;
   return normalized
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -327,8 +318,10 @@ function createAppCatalogEntry(app) {
   const id = normalizeAppId(app?.id);
   if (!id) return null;
   const name =
-    typeof app?.name === "string" && app.name.trim()
-      ? app.name.trim()
+    typeof app?.appName === "string" && app.appName.trim()
+      ? app.appName.trim()
+      : typeof app?.name === "string" && app.name.trim()
+        ? app.name.trim()
       : formatAppNameFromId(id);
   return {
     ...app,
@@ -338,22 +331,15 @@ function createAppCatalogEntry(app) {
 }
 
 function sortAppCatalogEntries(a, b) {
-  const aBuiltinIndex = BUILTIN_APP_ORDER.indexOf(a.id);
-  const bBuiltinIndex = BUILTIN_APP_ORDER.indexOf(b.id);
-  if (aBuiltinIndex !== -1 || bBuiltinIndex !== -1) {
-    if (aBuiltinIndex === -1) return 1;
-    if (bBuiltinIndex === -1) return -1;
-    return aBuiltinIndex - bBuiltinIndex;
-  }
+  if (a.id === DEFAULT_APP_ID && b.id !== DEFAULT_APP_ID) return -1;
+  if (b.id === DEFAULT_APP_ID && a.id !== DEFAULT_APP_ID) return 1;
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
 function refreshAppCatalog(apps = []) {
   const next = new Map();
 
-  for (const builtinId of BUILTIN_APP_ORDER) {
-    next.set(builtinId, createAppCatalogEntry({ id: builtinId }));
-  }
+  next.set(DEFAULT_APP_ID, createAppCatalogEntry({ id: DEFAULT_APP_ID, name: DEFAULT_APP_NAME }));
 
   for (const app of apps) {
     const entry = createAppCatalogEntry(app);
@@ -362,21 +348,22 @@ function refreshAppCatalog(apps = []) {
   }
 
   for (const session of sessions) {
-    const entry = createAppCatalogEntry({ id: session?.appId });
+    const entry = createAppCatalogEntry({ id: session?.appId, appName: session?.appName });
     if (!entry) continue;
     if (!next.has(entry.id)) {
       next.set(entry.id, entry);
     }
   }
 
-  if (activeAppFilter !== APP_FILTER_ALL_VALUE && !next.has(activeAppFilter)) {
-    next.set(
-      activeAppFilter,
-      createAppCatalogEntry({ id: activeAppFilter }),
-    );
-  }
-
   appCatalog = [...next.values()].filter(Boolean).sort(sortAppCatalogEntries);
+  if (activeAppFilter !== APP_FILTER_ALL_VALUE && !appCatalog.some((app) => app.id === activeAppFilter)) {
+    activeAppFilter = APP_FILTER_ALL_VALUE;
+    persistActiveAppFilter(activeAppFilter);
+  }
+  if (!appCatalog.some((app) => app.id !== DEFAULT_APP_ID) && activeAppFilter !== APP_FILTER_ALL_VALUE) {
+    activeAppFilter = APP_FILTER_ALL_VALUE;
+    persistActiveAppFilter(activeAppFilter);
+  }
   renderAppFilterOptions();
 }
 
@@ -413,8 +400,27 @@ function getSessionCountForApp(appId) {
   return activeSessions.filter((session) => getEffectiveSessionAppId(session) === appId).length;
 }
 
+function shouldShowAppFilter() {
+  return !visitorMode && appCatalog.some((app) => app.id !== DEFAULT_APP_ID);
+}
+
+function syncSidebarFiltersVisibility(showingSessions = true) {
+  if (!sidebarFilters) return;
+  sidebarFilters.classList.toggle("hidden", !showingSessions || !shouldShowAppFilter());
+}
+
 function renderAppFilterOptions() {
-  if (!appFilterSelect || visitorMode) return;
+  if (!appFilterSelect || visitorMode) {
+    syncSidebarFiltersVisibility();
+    return;
+  }
+
+  if (!shouldShowAppFilter()) {
+    appFilterSelect.innerHTML = "";
+    appFilterSelect.value = APP_FILTER_ALL_VALUE;
+    syncSidebarFiltersVisibility();
+    return;
+  }
 
   const previousValue = normalizeAppFilter(appFilterSelect.value || activeAppFilter);
   const selectedValue = appCatalog.some((app) => app.id === previousValue)
@@ -436,6 +442,7 @@ function renderAppFilterOptions() {
   }
 
   appFilterSelect.value = normalizeAppFilter(selectedValue);
+  syncSidebarFiltersVisibility();
 }
 
 if (appFilterSelect) {

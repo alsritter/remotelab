@@ -250,7 +250,9 @@ function switchTab(tab, { syncState = true } = {}) {
   const showingSessions = activeTab === "sessions";
   tabSessions.classList.toggle("active", activeTab === "sessions");
   tabProgress.classList.toggle("active", activeTab === "progress");
-  if (sidebarFilters) {
+  if (typeof syncSidebarFiltersVisibility === "function") {
+    syncSidebarFiltersVisibility(showingSessions);
+  } else if (sidebarFilters) {
     sidebarFilters.classList.toggle("hidden", !showingSessions);
   }
   sessionList.style.display = showingSessions ? "" : "none";

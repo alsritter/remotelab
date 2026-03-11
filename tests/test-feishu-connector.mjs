@@ -421,6 +421,7 @@ try {
   );
 
   assert.equal(createdPayload?.appId, 'feishu');
+  assert.equal(createdPayload?.appName, 'Feishu');
   assert.equal(createdPayload?.externalTriggerId, 'feishu:p2p:chat_for_scope');
   assert.equal(reply.sessionId, 'sess_feishu_1');
   assert.equal(reply.runId, 'run_feishu_1');

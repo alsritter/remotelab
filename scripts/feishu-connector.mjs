@@ -1029,6 +1029,7 @@ async function createOrReuseSession(runtime, summary) {
     tool: runtime.config.sessionTool,
     name: buildSessionName(summary),
     appId: REMOTELAB_SESSION_APP_ID,
+    appName: runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu',
     group: 'Feishu',
     description: buildSessionDescription(summary),
     systemPrompt: runtime.config.systemPrompt,

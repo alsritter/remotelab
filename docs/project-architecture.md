@@ -286,7 +286,7 @@ Common fields include:
 - `created`, `updatedAt`
 - `activeRunId`
 - `claudeSessionId`, `codexThreadId`
-- `appId`, `visitorId`
+- `appId`, `appName`, `visitorId`
 - `systemPrompt`
 - `completionTargets`
 - `externalTriggerId`
@@ -723,6 +723,11 @@ Apps and shares:
 - `DELETE /api/apps/:id`
 - `GET /app/:shareToken`
 - `GET /share/:snapshotId`
+
+Implementation note:
+
+- `GET /api/apps` is the shareable App template CRUD surface
+- the owner sidebar app filter is derived from session metadata (`appId` / `appName`) instead of a hardcoded frontend catalog, so installations with only the default `chat` app do not surface that filter
 
 Auth and push:
 

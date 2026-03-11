@@ -392,7 +392,7 @@ export async function handleRequest(req, res) {
       '~',
       app.tool || 'codex',
       app.name,
-      { appId: app.id, visitorId, systemPrompt: app.systemPrompt }
+      { appId: app.id, appName: app.name, visitorId, systemPrompt: app.systemPrompt }
     );
     // Inject welcome message as first assistant event so visitor sees it immediately
     if (app.welcomeMessage) {
@@ -706,6 +706,7 @@ export async function handleRequest(req, res) {
         tool,
         name,
         appId,
+        appName,
         group,
         description,
         systemPrompt,
@@ -727,6 +728,7 @@ export async function handleRequest(req, res) {
       }
       const session = await createSession(resolvedFolder, tool, name || '', {
         appId: typeof appId === 'string' ? appId : '',
+        appName: typeof appName === 'string' ? appName : '',
         group: group || '',
         description: description || '',
         systemPrompt: typeof systemPrompt === 'string' ? systemPrompt : '',

@@ -35,9 +35,11 @@ try {
 
   const githubSession = await createSession(workspace, 'codex', 'GitHub issue triage', {
     appId: 'github',
+    appName: 'GitHub',
     group: 'GitHub',
   });
   assert.equal(githubSession.appId, 'github');
+  assert.equal(githubSession.appName, 'GitHub');
 
   const storedAfterCreate = readSessionsFile();
   assert.equal(
@@ -49,6 +51,11 @@ try {
     storedAfterCreate.find((entry) => entry.id === githubSession.id)?.appId,
     'github',
     'explicit app ids should persist as canonical session metadata',
+  );
+  assert.equal(
+    storedAfterCreate.find((entry) => entry.id === githubSession.id)?.appName,
+    'GitHub',
+    'session-scoped app names should persist for owner UI rendering',
   );
 
   const legacySessionId = 'legacy_session_no_app';
@@ -81,11 +88,20 @@ try {
 
   const emailReuse = await createSession(workspace, 'codex', 'Reply via email', {
     appId: 'email',
+    appName: 'Email',
     externalTriggerId: 'email-thread:legacy-root',
     group: 'Mail',
   });
   assert.equal(emailReuse.id, legacyExternalId, 'external trigger reuse should keep the same session id');
   assert.equal(emailReuse.appId, 'email', 'external trigger refresh should upgrade legacy sessions to the connector app scope');
+  assert.equal(emailReuse.appName, 'Email', 'external trigger refresh should also preserve the connector display name');
+
+  const storedAfterReuse = readSessionsFile();
+  assert.equal(
+    storedAfterReuse.find((entry) => entry.id === legacyExternalId)?.appName,
+    'Email',
+    'session reuse should persist connector display names for legacy sessions',
+  );
 
   const chatSessions = await listSessions({ appId: 'chat' });
   assert.equal(chatSessions.some((session) => session.id === ownerChat.id), true);

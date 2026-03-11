@@ -203,6 +203,11 @@ function buildForkSessionName(session) {
   return `fork - ${sourceName || 'session'}`;
 }
 
+function normalizeSessionAppName(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
 function sanitizeForkedEvent(event) {
   if (!event || typeof event !== 'object') return null;
   const next = JSON.parse(JSON.stringify(event));
@@ -1063,6 +1068,7 @@ export async function getRunState(runId) {
 export async function createSession(folder, tool, name, extra = {}) {
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const requestedAppId = normalizeAppId(extra.appId);
+  const requestedAppName = normalizeSessionAppName(extra.appName);
   const created = await runSessionsMetaMutation(async () => {
     const metas = await loadSessionsMeta();
     if (externalTriggerId) {
@@ -1081,6 +1087,11 @@ export async function createSession(folder, tool, name, extra = {}) {
         const description = normalizeSessionDescription(extra.description || '');
         if (description && updated.description !== description) {
           updated.description = description;
+          changed = true;
+        }
+
+        if (requestedAppName && updated.appName !== requestedAppName) {
+          updated.appName = requestedAppName;
           changed = true;
         }
 
@@ -1133,6 +1144,7 @@ export async function createSession(folder, tool, name, extra = {}) {
 
     if (group) session.group = group;
     if (description) session.description = description;
+    if (requestedAppName) session.appName = requestedAppName;
     if (extra.visitorId) session.visitorId = extra.visitorId;
     if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
@@ -1487,6 +1499,7 @@ export async function forkSession(sessionId) {
     group: source.group || '',
     description: source.description || '',
     appId: source.appId || '',
+    appName: source.appName || '',
     systemPrompt: source.systemPrompt || '',
     forkedFromSessionId: source.id,
     forkedFromSeq: source.latestSeq || 0,
