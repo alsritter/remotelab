@@ -1,29 +1,46 @@
-# Cloudflare Email Worker
+# Cloudflare Email Worker (Prompt-First Deploy Contract)
 
-Current live mailbox architecture:
+This document is the operator contract for asking an AI agent to deploy the thin Cloudflare email edge while keeping RemoteLab's business logic local.
+
+## Copy this prompt
+
+```text
+I want you to deploy or update the RemoteLab Cloudflare Email Worker.
+
+Follow `docs/cloudflare-email-worker.md` in this repository as the deployment contract.
+Keep the workflow inside this chat.
+Do every automatable step yourself.
+Only stop for missing inputs or `[HUMAN]` steps.
+When you stop, tell me exactly what I need to do in Cloudflare and how you'll validate it afterward.
+```
+
+## Architecture
 
 `Cloudflare Email Routing -> Cloudflare Email Worker(email) -> mailbox bridge -> local agent-mail-worker -> RemoteLab -> completion target -> Cloudflare Email Worker(fetch) -> Cloudflare send_email`
 
-## Why this shape
+## Thin-edge rule
 
-- Cloudflare only provides the atomic email capabilities: receive and send
-- RemoteLab keeps the business logic: filtering, review, automation, session routing, and replies
-- Provider migration stays easier because the internal mailbox workflow is not embedded in edge code
+- Cloudflare only does inbound receive and outbound send.
+- RemoteLab and the local mailbox stack keep filtering, review, automation, session routing, and replies.
+- Edge config stays thin so provider migration remains easy.
 
-## Repo-ready state
+## [HUMAN] steps
 
-- Worker name: `remotelab-email-worker`
-- Example Worker URL: `https://remotelab-email-worker.example.workers.dev`
-- Example public mailbox webhook: `https://mailhook.example.com/cloudflare-email/webhook`
-- Example sender address: `agent@example.com`
-- Inbound routing: Cloudflare Email Routing rule sends your mailbox alias to the Worker
-- Outbound replies: RemoteLab completion targets call the Worker `fetch` endpoint, which uses Cloudflare `send_email`
+1. Authenticate Wrangler or Cloudflare if the machine is not already logged in.
+2. Create or confirm the Cloudflare Email Routing rule that sends the mailbox alias to the Worker.
+3. Provide any mailbox identity values the AI cannot infer, such as sender address, worker URL, or mailbox bridge URL.
 
-## Worker configuration
+## AI execution contract
 
-Copy `cloudflare/email-worker/wrangler.example.jsonc` to `cloudflare/email-worker/wrangler.jsonc`, then fill in your own values. The local `wrangler.jsonc` copy stays gitignored.
+- copy `cloudflare/email-worker/wrangler.example.jsonc` to the gitignored local `cloudflare/email-worker/wrangler.jsonc`
+- keep only `MAILBOX_FROM` and `MAILBOX_BRIDGE_URL` in Worker config
+- read or confirm the local mailbox tokens from `~/.config/remotelab/agent-mailbox/outbound.json` and `~/.config/remotelab/agent-mailbox/bridge.json`
+- deploy with `cloudflare/email-worker/deploy.sh`
+- return the Worker URL, confirm `GET /healthz`, and validate the mailbox bridge path after deploy
 
-The thin-edge config keeps only:
+## Worker config contract
+
+Local `wrangler.jsonc` should only carry:
 
 - `MAILBOX_FROM`
 - `MAILBOX_BRIDGE_URL`
@@ -33,11 +50,9 @@ Secrets uploaded during deploy:
 - `OUTBOUND_API_TOKEN`
 - `MAILBOX_BRIDGE_TOKEN`
 
-The Worker no longer carries RemoteLab login/session orchestration config. That logic now lives only in the local mailbox stack.
+The Worker should not carry RemoteLab login or session-orchestration config. That logic stays in the local mailbox stack.
 
-## Local outbound config
-
-Recommended mailbox `outbound.json` shape:
+## Local outbound config contract
 
 ```json
 {
@@ -48,19 +63,14 @@ Recommended mailbox `outbound.json` shape:
 }
 ```
 
-## Deploy
+## Success state
 
-```bash
-cd ~/code/remotelab/cloudflare/email-worker
-cp wrangler.example.jsonc wrangler.jsonc
-./deploy.sh
-```
+- inbound routing sends the mailbox alias to the Worker
+- RemoteLab completion targets can call `POST /api/send-email`
+- `curl https://.../healthz` succeeds
+- mailbox bridge and reply tests pass when the AI runs them
 
-The deploy script reads local mailbox config, uploads the outbound and bridge secrets, and deploys the Worker.
-
-## Validation
-
-Useful checks:
+## Validation examples
 
 ```bash
 curl https://remotelab-email-worker.example.workers.dev/healthz

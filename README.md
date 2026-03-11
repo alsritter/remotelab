@@ -54,6 +54,8 @@ The important architectural assumptions are:
 
 The fastest path is still to paste a setup prompt into CodeX, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login.
 
+Configuration docs in this repo are prompt-first: the human copies a prompt into their own AI coding agent, and the rest of the setup stays inside that conversation except for explicit `[HUMAN]` steps.
+
 **Prerequisites before you paste the prompt:**
 - **macOS**: Homebrew installed + Node.js 18+
 - **Linux**: Node.js 18+
@@ -69,12 +71,13 @@ My domain: [YOUR_DOMAIN]
 Subdomain I want to use: [SUBDOMAIN]
 
 Please follow the full setup guide at docs/setup.md in this repository.
+Keep the workflow inside this chat.
 Do every step you can automatically.
-When you hit a [HUMAN] step, stop and tell me exactly what to do.
-After I confirm each manual step, continue to the next phase.
+Only stop for missing inputs or [HUMAN] steps.
+When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
 ```
 
-If you prefer a manual walkthrough, use `docs/setup.md`.
+If you want the full setup contract and the human-only checkpoints, use `docs/setup.md`.
 
 ### What you'll have when done
 

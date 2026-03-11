@@ -27,21 +27,31 @@ When the system changes, update the matching surface instead of letting discussi
 - domain/refactor baseline changes → `../notes/current/core-domain-contract.md`
 - outdated or conflicting notes → trim them, archive them, or rewrite them to point at the canonical doc
 
+## Configuration Docs Principle
+
+For setup, deployment, and connector docs, assume the operator is human but the configured system is an AI toolchain.
+
+- the default human action is to copy a prompt into their own AI coding agent
+- the main execution should stay inside that chat, not in the document
+- the document should explicitly mark only the steps that truly require a human with `[HUMAN]`
+- a good config doc includes the prompt, required inputs, target state, exact config artifacts or paths, and concise validation
+- avoid full command-by-command walkthroughs for steps the AI can execute or repair on its own
+
 ## What Lives In `docs/`
 
 ### Current Core
 
 - `project-architecture.md` — top-down map of the shipped system
-- `setup.md` — installation and service setup
+- `setup.md` — prompt-first setup contract, human checkpoints, and target state
 - `external-message-protocol.md` — canonical integration contract for external channels
 - `creating-apps.md` — user/developer guide for Apps
 
 ### Focused Integrations
 
-- `cloudflare-email-worker.md` — email worker deployment notes
-- `feishu-bot-setup.md` — shareable operator + console setup flow for the RemoteLab Feishu connector
-- `github-auto-triage.md` — GitHub intake/auto-reply workflow
-- `remote-capability-monitor.md` — recurring competitor and adjacent-surface monitoring for remote agent control
+- `cloudflare-email-worker.md` — prompt-first Cloudflare Email Worker deployment contract
+- `feishu-bot-setup.md` — prompt-first operator + console contract for the RemoteLab Feishu connector
+- `github-auto-triage.md` — prompt-first GitHub intake and auto-reply rollout contract
+- `remote-capability-monitor.md` — prompt-first local rollout contract for remote-agent capability monitoring
 
 ## What Lives In `notes/`
 

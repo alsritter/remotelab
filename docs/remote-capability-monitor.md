@@ -1,74 +1,41 @@
-# Remote Capability Monitor
+# Remote Capability Monitor (Prompt-First Local Rollout)
 
-This monitor is a lightweight product-intelligence watcher for the RemoteLab Live / remote-agent-control surface.
+This document is the contract for asking an AI agent to set up the recurring product-intelligence watcher on the local machine.
 
-It is meant to answer a narrow question continuously:
+The human should usually only approve missing logins or decide the source and notification policy. Everything else should stay inside the conversation with the AI.
 
-- what new signals are appearing around phone-first control of coding agents,
-- what are adjacent tools like `Claude Code` and `Codex` shipping,
-- and which capability patterns are worth copying into RemoteLab.
+## Copy this prompt
 
-## Shared vs Local Split
+```text
+I want you to set up the RemoteLab capability monitor on this machine.
 
-- Shared logic lives in `scripts/remote-capability-monitor.mjs`
-- Machine-local schedule, channels, and source tuning live outside the repo
-
-That keeps the parsing/scoring reusable while preserving operator-specific delivery details as local config.
-
-## Source Types
-
-The script supports:
-
-- `google_news_rss` sources using a search `query`
-- `rss` sources using a direct `url`
-- `atom` sources using a direct `url`
-
-Each source can define:
-
-- `lookbackHours`
-- `maxItems`
-- `baseWeight`
-- `target`
-- `mustMatchAny`
-- `mustMatchAll`
-- `lowConfidence`
-
-The monitor scores items heuristically for signals like:
-
-- explicit remote-control positioning
-- mobile / pocket / browser control
-- notifications and alerts
-- background / resume / scheduled execution
-- approvals / sandboxing
-- voice control
-- shareable workflow packaging
-- live visual feedback
-
-## Outputs
-
-Typical machine-local outputs are:
-
-- state in `~/.config/remotelab/remote-capability-monitor/`
-- reports in `~/.remotelab/research/remote-capability-monitor/`
-- notifications via the operator's local notifier config
-
-Each run writes:
-
-- a timestamped Markdown report
-- a timestamped JSON summary
-- `latest.md`
-- `latest.json`
-
-## Typical Commands
-
-Run once:
-
-```bash
-node scripts/remote-capability-monitor.mjs \
-  --config ~/.config/remotelab/remote-capability-monitor/config.json
+Follow `docs/remote-capability-monitor.md` in this repository as the rollout contract.
+Keep the workflow inside this chat.
+Do every automatable step yourself.
+Only stop for missing inputs or `[HUMAN]` steps.
+When you stop, tell me exactly what I need to decide or authorize, and how you'll validate the result afterward.
 ```
 
-Bootstrap with a wider first-run window, but do not notify or write state:
+## What the monitor answers
+
+The monitor continuously answers a narrow question set:
+
+- what new signals are appearing around phone-first control of coding agents
+- what adjacent tools like `Claude Code` and `Codex` are shipping
+- which capability patterns are worth copying into RemoteLab
+
+## [HUMAN] steps
+
+1. Decide which competitors, source feeds, or adjacent surfaces matter if the AI cannot infer them confidently.
+2. Approve or finish notification-provider auth if the notifier depends on a browser or external login.
+3. Confirm whether the rollout should remain dry-run only or move to scheduled notifications.
+
+## AI execution contract
+
+- keep shared logic in `scripts/remote-capability-monitor.mjs`
+- write machine-local config to `~/.config/remotelab/remote-capability-monitor/config.json`
+- tune `sources`, `bootstrapHours`, `reportDir`, and `notification` locally rather than hardcoding operator details in the repo
+- run a bootstrap dry-run first:
 
 ```bash
 node scripts/remote-capability-monitor.mjs \
@@ -78,24 +45,58 @@ node scripts/remote-capability-monitor.mjs \
   --verbose
 ```
 
-Force a heartbeat notification from the current state:
+- review the first report in chat, then run normal mode or `--force-notify` if needed
+- if recurring rollout is wanted, create a small local wrapper plus scheduler instead of embedding machine-local scheduling inside the repo
 
-```bash
-node scripts/remote-capability-monitor.mjs \
-  --config ~/.config/remotelab/remote-capability-monitor/config.json \
-  --force-notify
+## Local config contract
+
+Shared logic lives in `scripts/remote-capability-monitor.mjs`. Machine-local schedule, channels, and source tuning live outside the repo.
+
+Config shape:
+
+```json
+{
+  "bootstrapHours": 168,
+  "reportDir": "~/.remotelab/research/remote-capability-monitor",
+  "notification": {
+    "notifierPath": "~/.remotelab/scripts/send-multi-channel-reminder.mjs",
+    "channels": []
+  },
+  "sources": []
+}
 ```
 
-## Recommended Local Scheduling
+Supported source types:
 
-On macOS, use a small wrapper under `~/.remotelab/scripts/` plus a `LaunchAgent` that runs every 6 hours.
+- `google_news_rss` with `query`
+- `rss` with `url`
+- `atom` with `url`
 
-That local wrapper should:
+Per-source tuning can include:
 
-- set a clean `PATH`
-- point to the machine-local config file
-- do lock-based de-duplication so overlapping runs do not stack
+- `lookbackHours`
+- `maxItems`
+- `baseWeight`
+- `target`
+- `mustMatchAny`
+- `mustMatchAll`
+- `lowConfidence`
 
-## Tuning Note
+## Outputs and success state
 
-Some competitor names may be ambiguous in public search feeds. When that happens, keep them in a low-confidence bucket and rely on stronger product-specific or official feed sources until the exact site/repo anchor is known.
+Typical machine-local outputs are:
+
+- state in `~/.config/remotelab/remote-capability-monitor/`
+- reports in `~/.remotelab/research/remote-capability-monitor/`
+- optional notifications via the operator's local notifier config
+
+Each healthy run writes:
+
+- a timestamped Markdown report
+- a timestamped JSON summary
+- `latest.md`
+- `latest.json`
+
+## Tuning note
+
+Some competitor names may be ambiguous in public search feeds. When that happens, keep them in a low-confidence bucket and rely on stronger product-specific or official feed sources until the exact site or repo anchor is known.

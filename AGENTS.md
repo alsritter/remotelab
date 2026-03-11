@@ -17,6 +17,14 @@ A web app that lets users control AI coding tools (Claude Code, Codex) from a ph
 - Node.js, no external frameworks (only `ws` for WebSocket)
 - Vanilla JS frontend, no build tools
 
+## Documentation Rule
+
+For setup, deployment, and integration docs, use a prompt-first shape:
+
+- assume the operator is a human delegating to their own AI coding agent
+- lead with a copyable prompt, required inputs, target state, and explicit `[HUMAN]` checkpoints
+- keep automatable command-by-command flow inside the AI conversation or scripts, not as a long manual cookbook
+
 ---
 
 ## Architecture

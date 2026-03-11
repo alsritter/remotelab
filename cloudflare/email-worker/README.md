@@ -2,6 +2,8 @@
 
 Minimal Cloudflare edge for a mailbox such as `agent@example.com`.
 
+Operator flow is prompt-first: ask an AI agent on the host machine to deploy this package, and only step in for Cloudflare auth or dashboard changes. Use `docs/cloudflare-email-worker.md` for the human-facing deployment contract.
+
 Flow:
 
 `Internet -> Cloudflare Email Routing -> Email Worker(email) -> local mailbox bridge -> local agent-mail-worker -> RemoteLab -> completion target -> Email Worker(fetch) -> Cloudflare send_email`
