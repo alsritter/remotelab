@@ -61,7 +61,7 @@ function setShareSnapshotHeaders(res, nonce) {
     "connect-src 'none'",
     `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'unsafe-inline'",
-    "img-src data: blob:",
+    "img-src 'self' data: blob:",
     "font-src 'none'",
   ].join('; '));
 }
