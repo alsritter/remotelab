@@ -155,17 +155,11 @@ async function dispatchAction(msg) {
             ...(msg.thinking ? { thinking: true } : {}),
           }),
         });
-        const changed = clearPendingMessage();
-        clearOptimisticMessage();
-        if (changed) {
-          refreshSessionAttentionUi();
+        if (data?.queued) {
+          clearPendingMessage();
+          clearOptimisticMessage();
         }
-        try {
-          await refreshCurrentSession();
-        } catch (error) {
-          console.warn("Session refresh after send failed:", error?.message || error);
-          refreshCurrentSession().catch(() => {});
-        }
+        await refreshCurrentSession();
         return true;
       }
       case "apply_template": {
@@ -230,10 +224,12 @@ function getCurrentSession() {
   return sessions.find((s) => s.id === currentSessionId) || null;
 }
 
-function normalizeSessionStatus(incomingStatus) {
-  return incomingStatus === "running" || incomingStatus === "interrupted"
-    ? incomingStatus
-    : "idle";
+function normalizeSessionStatus(incomingStatus, previousStatus) {
+  if (incomingStatus !== "idle") return incomingStatus;
+  if (previousStatus === "running" || previousStatus === "done") {
+    return "done";
+  }
+  return "idle";
 }
 
 function updateResumeButton() {
@@ -291,7 +287,8 @@ function updateStatus(connState, sessState, renameState, archived = false) {
   });
   const showArchivedOnly = archived && [
     "idle",
-    "unread",
+    "done-read",
+    "done-unread",
     "interrupted",
     "archived",
   ].includes(visualStatus.key);
@@ -420,6 +417,10 @@ function renderEvent(evt, autoScroll) {
     case "status":
       rendered = true;
       renderStatusMsg(evt);
+      break;
+    case "context_barrier":
+      rendered = true;
+      renderContextBarrier(evt);
       break;
     case "usage":
       rendered = true;

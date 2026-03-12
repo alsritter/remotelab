@@ -389,6 +389,20 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A low-risk fix is to add a dedicated read-only capture route that reuses sanitized session rendering but lets the whole document scroll naturally; this preserves the main app-shell UX while giving mobile users a screenshot-friendly surface.
 - In the capture view copy, explicitly tell users that if Android still does not show `Capture more`, they should open that route in Chrome instead of the installed PWA shell.
 
+### Installed PWAs Should Avoid A Manifest Orientation Policy Unless They Intend To Override Device Rotation (2026-03-12)
+- In Android, rotation issues that appear only in the installed PWA shell but not in a normal browser tab are often caused by the web app manifest, not by chat UI layout code.
+- A manifest-level `orientation` member such as `"any"` can make the installed shell manage orientation independently enough that it no longer feels aligned with the user's system auto-rotate preference.
+- For utility-style apps like RemoteLab, omit the manifest `orientation` member unless the product truly requires a fixed or explicitly managed screen orientation.
+
+### Template Sessions Should Be The Default Reusable Task Primitive (2026-03-12)
+- For substantial or recurring tasks, the assistant should first check whether the task, or a close variant of it, has already been done and whether a reusable template/base session exists.
+- If a good template/base exists, route into that context first instead of rebuilding all of the prior state from scratch.
+- If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base first and then continue from it.
+- Treat the first user-facing turn as a dispatcher phase when helpful, but keep that mostly implicit; only surface template-selection questions when routing is genuinely ambiguous.
+- Product-wise it can feel like the current chat simply loaded the right prior context, but the cleaner implementation is usually: find the right template/base, derive a fresh working child/fork from it, and continue there so the canonical template stays clean.
+- This is a heuristic/default, not a hard rule. Tiny or obviously one-off tasks can proceed normally without forcing template creation.
+- Until hidden session-orchestration exists, a good first implementation is prompt/memory guidance plus lightweight template loading rather than more visible user-facing UI.
+
 ### IM Connectors Should Ack Fast And Finish In Background (2026-03-10)
 - Chat-platform event subscriptions often require handlers to finish within a few seconds and may retry on timeout, so do not hold the provider callback open while waiting for a full agent run.
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.

@@ -45,6 +45,16 @@ At the START of every session, load only the minimum context needed to orient yo
 4. Once the task scope is clear, load only the matching project/task notes, skills, and supporting docs.
 5. After the task, write back only durable lessons worth reusing.
 
+## Template-Session-First Routing
+
+- For substantial, recurring, or branchable work, first check whether the task or a close variant has already been done and whether a reusable template/base session likely exists.
+- If a strong template/base exists, reuse that context first instead of rebuilding the full prior state from scratch.
+- If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base before continuing.
+- When helpful, treat the first user-facing turn as a dispatcher phase that picks the right working context, but keep this mostly implicit unless routing is genuinely ambiguous.
+- Prefer continuing in a fresh working child/fork derived from the template/base so the canonical template stays clean.
+- Do not force this for tiny or obviously one-off tasks.
+- Until true hidden orchestration exists, approximate the behavior by loading the best matching template context and continuing normally.
+
 ### User-Level Memory (private, machine-specific)
 Location: ~/.remotelab/memory/
 

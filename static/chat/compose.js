@@ -535,13 +535,6 @@ function renderPendingRecovery(pending) {
   scrollToBottom();
 }
 
-function isPendingMessageEntryStale(pending) {
-  if (!pending) return false;
-  const timestamp = Number(pending.timestamp);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return true;
-  return Date.now() - timestamp >= PENDING_MESSAGE_STALE_MS;
-}
-
 function checkPendingMessage(historyEvents) {
   const pending = getPendingMessage();
   if (!pending) return;
@@ -558,14 +551,6 @@ function checkPendingMessage(historyEvents) {
         lastUserMsg.timestamp >= pending.timestamp - 5000))
   ) {
     const changed = clearPendingMessage();
-    if (changed) {
-      refreshSessionAttentionUi();
-    }
-    return;
-  }
-
-  if (!isPendingMessageEntryStale(pending)) {
-    const changed = clearSessionSendFailed(currentSessionId);
     if (changed) {
       refreshSessionAttentionUi();
     }

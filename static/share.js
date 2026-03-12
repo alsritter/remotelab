@@ -381,6 +381,16 @@
     messagesInner.appendChild(div);
   }
 
+  function renderContextBarrier(event) {
+    if (inThinkingBlock) {
+      finalizeThinkingBlock();
+    }
+    const div = document.createElement("div");
+    div.className = "context-barrier";
+    div.textContent = event.content || "Older messages above this marker are no longer in live context.";
+    messagesInner.appendChild(div);
+  }
+
   function formatCompactTokens(n) {
     if (!Number.isFinite(n) || n <= 0) return "0";
     if (n < 1000) return `${Math.round(n)}`;
@@ -430,6 +440,9 @@
         break;
       case "status":
         renderStatus(event);
+        break;
+      case "context_barrier":
+        renderContextBarrier(event);
         break;
       case "usage":
         renderUsage(event);
