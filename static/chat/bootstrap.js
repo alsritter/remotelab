@@ -3,7 +3,7 @@
 const buildInfo = window.__REMOTELAB_BUILD__ || {};
 const buildAssetVersion = buildInfo.assetVersion || "dev";
 const BUILD_INFO_ENDPOINT = "/api/build-info";
-const BUILD_REFRESH_CHECK_INTERVAL_MS = 4000;
+const BUILD_REFRESH_CHECK_COOLDOWN_MS = 1000;
 const BUILD_FORCE_RELOAD_HOLD_MS = 700;
 
 console.info(
@@ -92,7 +92,7 @@ async function reloadForFreshBuild(nextBuildInfo, { force = false } = {}) {
 async function checkForUpdatedBuild({ force = false } = {}) {
   if (buildRefreshScheduled) return false;
   const now = Date.now();
-  if (!force && now - lastBuildRefreshCheckAt < BUILD_REFRESH_CHECK_INTERVAL_MS) {
+  if (!force && now - lastBuildRefreshCheckAt < BUILD_REFRESH_CHECK_COOLDOWN_MS) {
     return false;
   }
   if (buildRefreshCheckPromise) return buildRefreshCheckPromise;
@@ -122,6 +122,11 @@ async function checkForUpdatedBuild({ force = false } = {}) {
   return buildRefreshCheckPromise;
 }
 
+window.RemoteLabBuild = {
+  checkForUpdates: checkForUpdatedBuild,
+  reloadForFreshBuild,
+};
+
 window.addEventListener("pageshow", () => {
   void checkForUpdatedBuild({ force: true });
 });
@@ -137,12 +142,6 @@ document.addEventListener("visibilitychange", () => {
     void checkForUpdatedBuild();
   }
 });
-
-window.setInterval(() => {
-  if (document.visibilityState === "visible") {
-    void checkForUpdatedBuild();
-  }
-}, BUILD_REFRESH_CHECK_INTERVAL_MS);
 
 // ---- Elements ----
 const menuBtn = document.getElementById("menuBtn");

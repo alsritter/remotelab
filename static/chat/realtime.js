@@ -9,6 +9,7 @@ function connect() {
 
   ws.onopen = () => {
     updateStatus("connected", getCurrentSession());
+    void window.RemoteLabBuild?.checkForUpdates?.({ force: true });
     if (hasSeenWsOpen) {
       refreshRealtimeViews().catch(() => {});
     } else {
@@ -221,6 +222,10 @@ function getCurrentSession() {
 
 function handleWsMessage(msg) {
   switch (msg.type) {
+    case "build_invalidated":
+      void window.RemoteLabBuild?.checkForUpdates?.({ force: true });
+      break;
+
     case "sessions_invalidated":
       fetchSessionsList().catch(() => {});
       break;

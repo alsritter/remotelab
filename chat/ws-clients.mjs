@@ -19,12 +19,20 @@ export function getClientsMatching(predicate = () => true) {
   return matches;
 }
 
-export function broadcastOwners(msg) {
+export function broadcastMatching(msg, predicate = () => true) {
   if (!wss) return;
   const data = JSON.stringify(msg);
   for (const client of wss.clients) {
     if (client.readyState !== 1) continue;
-    if (client._authSession?.role !== 'owner') continue;
+    if (!predicate(client)) continue;
     try { client.send(data); } catch {}
   }
+}
+
+export function broadcastAll(msg) {
+  broadcastMatching(msg);
+}
+
+export function broadcastOwners(msg) {
+  broadcastMatching(msg, (client) => client._authSession?.role === 'owner');
 }

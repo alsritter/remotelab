@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import WebSocket from 'ws';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -119,16 +120,41 @@ async function fetchBuildInfo(port) {
   return { headers: res.headers, payload: JSON.parse(res.text) };
 }
 
+async function connectWs(port) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      headers: { Cookie: ownerCookie },
+    });
+    socket.on('open', () => resolve(socket));
+    socket.on('error', reject);
+  });
+}
+
 async function main() {
   const { home } = setupTempHome();
   const port = randomPort();
   const seed = Date.now().toString(36);
   const frontendProbePath = join(repoRoot, 'static', 'chat', `__build_info_probe_${seed}.js`);
   const serviceProbePath = join(repoRoot, 'chat', `__service_build_probe_${seed}.mjs`);
+  const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8');
   let server = null;
+  let ws = null;
 
   try {
     server = await startServer({ home, port });
+    ws = await connectWs(port);
+    const wsMessages = [];
+    ws.on('message', (data) => {
+      try {
+        wsMessages.push(JSON.parse(data.toString()));
+      } catch {}
+    });
+
+    assert.doesNotMatch(
+      bootstrapSource,
+      /window\.setInterval\(/,
+      'frontend build refresh should not depend on timer polling',
+    );
 
     const initialBuild = await fetchBuildInfo(port);
     const initial = initialBuild.payload;
@@ -168,7 +194,10 @@ async function main() {
 
     await sleep(350);
     writeFileSync(frontendProbePath, 'window.__REMOTELAB_BUILD_INFO_PROBE__ = true;\n', 'utf8');
-    await sleep(350);
+    await waitFor(
+      () => wsMessages.some((msg) => msg.type === 'build_invalidated'),
+      'frontend build invalidation websocket hint',
+    );
 
     const frontendUpdatedBuild = await fetchBuildInfo(port);
     const frontendUpdated = frontendUpdatedBuild.payload;
@@ -220,6 +249,7 @@ async function main() {
 
     console.log('✅ Build info versioning validated');
   } finally {
+    ws?.close();
     await stopServer(server);
     rmSync(frontendProbePath, { force: true });
     rmSync(serviceProbePath, { force: true });

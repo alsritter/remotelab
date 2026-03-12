@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'fs/promises';
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync, statSync, watch } from 'fs';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute, sep } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
@@ -54,6 +54,7 @@ import {
   setSecurityHeaders, generateNonce, requireAuth,
 } from './middleware.mjs';
 import { pathExists, statOrNull } from './fs-utils.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 
 // Paths (files are read from disk on each request for hot-reload)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,8 @@ const pageBuildRoots = [
   staticDir,
 ];
 let cachedPageBuildInfo = null;
+const frontendBuildWatchers = [];
+let frontendBuildInvalidationTimer = null;
 
 const staticMimeTypesByExtension = {
   '.css': 'text/css; charset=utf-8',
@@ -278,6 +281,44 @@ async function getPageBuildInfo() {
   };
   return info;
 }
+
+function scheduleFrontendBuildInvalidation() {
+  cachedPageBuildInfo = null;
+  if (frontendBuildInvalidationTimer) return;
+  frontendBuildInvalidationTimer = setTimeout(() => {
+    frontendBuildInvalidationTimer = null;
+    broadcastAll({ type: 'build_invalidated' });
+  }, 120);
+  if (typeof frontendBuildInvalidationTimer.unref === 'function') {
+    frontendBuildInvalidationTimer.unref();
+  }
+}
+
+function startFrontendBuildWatchers() {
+  if (frontendBuildWatchers.length > 0) return;
+  for (const root of pageBuildRoots) {
+    try {
+      const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
+        const changedPath = String(filename || '');
+        if (changedPath) {
+          const segments = changedPath.split(/[\\/]+/).filter(Boolean);
+          if (segments.some((segment) => segment.startsWith('.'))) {
+            return;
+          }
+        }
+        scheduleFrontendBuildInvalidation();
+      });
+      watcher.on('error', (error) => {
+        console.error(`[build] frontend watcher error for ${root}: ${error.message}`);
+      });
+      frontendBuildWatchers.push(watcher);
+    } catch (error) {
+      console.warn(`[build] frontend watcher disabled for ${root}: ${error.message}`);
+    }
+  }
+}
+
+startFrontendBuildWatchers();
 
 async function resolveStaticAsset(pathname) {
   if (!pathname.startsWith('/')) return null;
