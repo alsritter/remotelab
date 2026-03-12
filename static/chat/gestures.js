@@ -1,15 +1,16 @@
 const gesturePill = document.getElementById("gesturePill");
 
-const EDGE_GESTURE_WIDTH_PX = 56;
-const EDGE_GESTURE_LOCK_DISTANCE_PX = 18;
-const EDGE_GESTURE_TRIGGER_DISTANCE_PX = 84;
-const EDGE_GESTURE_DIRECTION_RATIO = 1.15;
+const EDGE_GESTURE_START_ZONE_RATIO = 0.28;
+const EDGE_GESTURE_START_ZONE_MAX_PX = 140;
+const EDGE_GESTURE_LOCK_DISTANCE_PX = 8;
+const EDGE_GESTURE_TRIGGER_DISTANCE_PX = 32;
+const EDGE_GESTURE_DIRECTION_RATIO = 0.85;
 
 let edgeGestureState = null;
 let edgeGestureActionInFlight = false;
 
 function canUseEdgeGestures() {
-  if (!messagesEl || !gesturePill) return false;
+  if (!gesturePill) return false;
   if (isDesktop || visitorMode) return false;
   if (sidebarOverlay?.classList.contains("open")) return false;
   if (addToolModal && !addToolModal.hidden) return false;
@@ -52,6 +53,21 @@ function cancelEdgeGesture() {
   resetGesturePill();
 }
 
+function getEdgeGestureStartZonePx(viewportWidth) {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+    return EDGE_GESTURE_START_ZONE_MAX_PX;
+  }
+  return Math.min(
+    EDGE_GESTURE_START_ZONE_MAX_PX,
+    Math.max(64, Math.round(viewportWidth * EDGE_GESTURE_START_ZONE_RATIO)),
+  );
+}
+
+function shouldLockEdgeGesture(deltaX, deltaY, inwardDistance) {
+  if (inwardDistance < EDGE_GESTURE_LOCK_DISTANCE_PX) return false;
+  return Math.abs(deltaX) >= Math.abs(deltaY) * EDGE_GESTURE_DIRECTION_RATIO;
+}
+
 function getEdgeGestureDistance(touch, side) {
   const deltaX = touch.clientX - edgeGestureState.startX;
   return side === "left" ? deltaX : -deltaX;
@@ -65,8 +81,9 @@ function handleEdgeGestureStart(event) {
 
   const touch = event.touches[0];
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-  const fromLeftEdge = touch.clientX <= EDGE_GESTURE_WIDTH_PX;
-  const fromRightEdge = viewportWidth > 0 && touch.clientX >= viewportWidth - EDGE_GESTURE_WIDTH_PX;
+  const startZone = getEdgeGestureStartZonePx(viewportWidth);
+  const fromLeftEdge = touch.clientX <= startZone;
+  const fromRightEdge = viewportWidth > 0 && touch.clientX >= viewportWidth - startZone;
   if (!fromLeftEdge && !fromRightEdge) return;
 
   edgeGestureState = {
@@ -96,10 +113,7 @@ function handleEdgeGestureMove(event) {
       cancelEdgeGesture();
       return;
     }
-    if (inwardDistance < EDGE_GESTURE_LOCK_DISTANCE_PX) {
-      return;
-    }
-    if (Math.abs(deltaX) <= Math.abs(deltaY) * EDGE_GESTURE_DIRECTION_RATIO) {
+    if (!shouldLockEdgeGesture(deltaX, deltaY, inwardDistance)) {
       return;
     }
     edgeGestureState.locked = true;
@@ -118,8 +132,19 @@ function handleEdgeGestureMove(event) {
   );
 }
 
-function handleEdgeGestureEnd() {
+function handleEdgeGestureEnd(event) {
   if (!edgeGestureState) return;
+
+  const finalTouch = event.changedTouches?.[0] || null;
+  if (finalTouch) {
+    const deltaX = finalTouch.clientX - edgeGestureState.startX;
+    const deltaY = finalTouch.clientY - edgeGestureState.startY;
+    const finalDistance = getEdgeGestureDistance(finalTouch, edgeGestureState.side);
+    edgeGestureState.distance = finalDistance;
+    if (!edgeGestureState.locked && shouldLockEdgeGesture(deltaX, deltaY, finalDistance)) {
+      edgeGestureState.locked = true;
+    }
+  }
 
   const shouldTrigger =
     edgeGestureState.locked && edgeGestureState.distance >= EDGE_GESTURE_TRIGGER_DISTANCE_PX;
@@ -138,7 +163,10 @@ function handleEdgeGestureEnd() {
   });
 }
 
-messagesEl?.addEventListener("touchstart", handleEdgeGestureStart, { passive: true });
+document.addEventListener("touchstart", handleEdgeGestureStart, {
+  passive: true,
+  capture: true,
+});
 document.addEventListener("touchmove", handleEdgeGestureMove, { passive: false });
 document.addEventListener("touchend", handleEdgeGestureEnd, { passive: true });
 document.addEventListener("touchcancel", cancelEdgeGesture, { passive: true });
