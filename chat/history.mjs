@@ -36,6 +36,7 @@ const PREVIEW_LIMITS = {
 
 const metaCache = new Map();
 const contextCache = new Map();
+const forkContextCache = new Map();
 const eventCache = new Map();
 const bodyCache = new Map();
 const runSessionMutation = createKeyedTaskQueue();
@@ -71,6 +72,10 @@ function sessionMetaPath(sessionId) {
 
 function sessionContextPath(sessionId) {
   return join(sessionDir(sessionId), 'context.json');
+}
+
+function sessionForkContextPath(sessionId) {
+  return join(sessionDir(sessionId), 'fork-context.json');
 }
 
 function sessionEventsDir(sessionId) {
@@ -181,6 +186,34 @@ async function loadContext(sessionId) {
   return clone(context);
 }
 
+async function loadForkContext(sessionId) {
+  if (forkContextCache.has(sessionId)) {
+    return clone(forkContextCache.get(sessionId));
+  }
+  const context = await readJson(sessionForkContextPath(sessionId), null);
+  forkContextCache.set(sessionId, context);
+  return clone(context);
+}
+
+function normalizeForkContext(context = {}) {
+  return {
+    mode: context.mode === 'summary' ? 'summary' : 'history',
+    summary: typeof context.summary === 'string' ? context.summary.trim() : '',
+    continuationBody: typeof context.continuationBody === 'string' ? context.continuationBody.trim() : '',
+    activeFromSeq: Number.isInteger(context.activeFromSeq) ? context.activeFromSeq : 0,
+    preparedThroughSeq: Number.isInteger(context.preparedThroughSeq) ? context.preparedThroughSeq : 0,
+    contextUpdatedAt: typeof context.contextUpdatedAt === 'string' && context.contextUpdatedAt.trim()
+      ? context.contextUpdatedAt.trim()
+      : null,
+    updatedAt: typeof context.updatedAt === 'string' && context.updatedAt.trim()
+      ? context.updatedAt.trim()
+      : new Date().toISOString(),
+    source: typeof context.source === 'string' && context.source.trim()
+      ? context.source.trim()
+      : 'history',
+  };
+}
+
 async function saveContextUnlocked(sessionId, context) {
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionContextPath(sessionId), context || null);
@@ -188,10 +221,24 @@ async function saveContextUnlocked(sessionId, context) {
   return clone(context || null);
 }
 
+async function saveForkContextUnlocked(sessionId, context) {
+  const normalized = context ? normalizeForkContext(context) : null;
+  await ensureSessionDir(sessionId);
+  await writeJsonAtomic(sessionForkContextPath(sessionId), normalized);
+  forkContextCache.set(sessionId, normalized);
+  return clone(normalized);
+}
+
 async function clearContextUnlocked(sessionId) {
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionContextPath(sessionId), null);
   contextCache.set(sessionId, null);
+}
+
+async function clearForkContextUnlocked(sessionId) {
+  await ensureSessionDir(sessionId);
+  await writeJsonAtomic(sessionForkContextPath(sessionId), null);
+  forkContextCache.set(sessionId, null);
 }
 
 async function writeBody(sessionId, seq, field, value) {
@@ -330,6 +377,7 @@ async function appendEventsUnlocked(sessionId, events) {
 function clearSessionCaches(sessionId) {
   metaCache.delete(sessionId);
   contextCache.delete(sessionId);
+  forkContextCache.delete(sessionId);
   for (const key of [...eventCache.keys()]) {
     if (key.startsWith(`${sessionId}:`)) eventCache.delete(key);
   }
@@ -473,6 +521,21 @@ export async function setContextHead(sessionId, context = {}) {
 export async function clearContextHead(sessionId) {
   return runSessionMutation(sessionId, async () => {
     await clearContextUnlocked(sessionId);
+    return null;
+  });
+}
+
+export async function getForkContext(sessionId) {
+  return loadForkContext(sessionId);
+}
+
+export async function setForkContext(sessionId, context = {}) {
+  return runSessionMutation(sessionId, async () => saveForkContextUnlocked(sessionId, context));
+}
+
+export async function clearForkContext(sessionId) {
+  return runSessionMutation(sessionId, async () => {
+    await clearForkContextUnlocked(sessionId);
     return null;
   });
 }

@@ -199,6 +199,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Read mutable run state from disk on every reconciliation / cancel poll, and merge status updates against the latest on-disk record so normalization metadata cannot regress terminal fields.
 - Reconciliation should also treat a present `result.json` as terminal evidence if `status.json` is still non-terminal; that state can happen if the sidecar writes the result file and then dies or is interrupted before its final status write lands.
 - When backfilling terminal state from `result.json`, prefer `result.cancelled` over a later `cancelRequested` flag. A user can press Stop after a successful run already completed, and that late cancel request must not rewrite a completed run into `cancelled`.
+- If a session record still carries `activeRunId`, force a detached-run sync on session reads even when the cached run already looks terminal/finalized; otherwise APIs like session fork can clone a half-reconciled history before the terminal spool flush has materialized into durable session state.
 - Reflection is valuable, but memory writes should be rare and selective. Persist only durable lessons with clear expected reuse.
 - Prefer editing, merging, or deleting existing memory instead of appending near-duplicate notes.
 - Memory hygiene should happen on a light cadence: daily during intense debugging or weekly otherwise.

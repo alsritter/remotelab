@@ -86,26 +86,41 @@ function formatContinuationEvent(evt) {
   }
 }
 
-export function buildSessionContinuationContext(events, options = {}) {
+function buildContinuationIntro(options = {}) {
   const fromTool = options.fromTool || '';
   const toTool = options.toTool || '';
+  const switchedTools = fromTool && toTool && fromTool !== toTool;
+  return switchedTools
+    ? `RemoteLab session handoff: the user switched tools from ${fromTool} to ${toTool}.`
+    : 'RemoteLab session handoff for this existing conversation.';
+}
+
+export function prepareSessionContinuationBody(events) {
   const segments = (events || [])
     .map(formatContinuationEvent)
     .filter(Boolean);
 
   if (segments.length === 0) return '';
 
-  const switchedTools = fromTool && toTool && fromTool !== toTool;
-  const intro = switchedTools
-    ? `RemoteLab session handoff: the user switched tools from ${fromTool} to ${toTool}.`
-    : 'RemoteLab session handoff for this existing conversation.';
+  return truncateMiddle(segments.join('\n\n'));
+}
 
-  const body = truncateMiddle(segments.join('\n\n'));
+export function buildSessionContinuationContextFromBody(body, options = {}) {
+  const normalizedBody = normalizeText(body);
+  if (!normalizedBody) return '';
+
   return [
-    intro,
+    buildContinuationIntro(options),
     'Below is the prior session state reconstructed from RemoteLab\'s normalized history.',
     'Treat it as the authoritative context for continuing this same session.',
     '',
-    body,
+    normalizedBody,
   ].join('\n');
+}
+
+export function buildSessionContinuationContext(events, options = {}) {
+  return buildSessionContinuationContextFromBody(
+    prepareSessionContinuationBody(events),
+    options,
+  );
 }

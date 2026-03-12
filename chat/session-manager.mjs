@@ -8,17 +8,23 @@ import {
   appendEvent,
   appendEvents,
   clearContextHead,
+  clearForkContext,
   getContextHead,
+  getForkContext,
   getHistorySnapshot,
   loadHistory,
   readEventsAfter,
+  setForkContext,
   setContextHead,
 } from './history.mjs';
 import { messageEvent, statusEvent } from './normalizer.mjs';
 import { triggerSessionLabelSuggestion } from './summarizer.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
-import { buildSessionContinuationContext } from './session-continuation.mjs';
+import {
+  buildSessionContinuationContextFromBody,
+  prepareSessionContinuationBody,
+} from './session-continuation.mjs';
 import { broadcastOwners, getClientsMatching } from './ws-clients.mjs';
 import {
   buildTemporarySessionName,
@@ -761,7 +767,7 @@ async function flushDetachedRunIfNeeded(sessionId, runId) {
 
 async function reconcileSessionMeta(meta) {
   if (!meta?.activeRunId) return meta;
-  await flushDetachedRunIfNeeded(meta.id, meta.activeRunId);
+  await syncDetachedRun(meta.id, meta.activeRunId);
   return await findSessionMeta(meta.id) || meta;
 }
 
@@ -769,7 +775,7 @@ async function reconcileSessionsMetaList(list) {
   let changed = false;
   for (const meta of list) {
     if (!meta?.activeRunId) continue;
-    await flushDetachedRunIfNeeded(meta.id, meta.activeRunId);
+    await syncDetachedRun(meta.id, meta.activeRunId);
     changed = true;
   }
   return changed ? loadSessionsMeta() : list;
@@ -831,34 +837,119 @@ function broadcastSessionInvalidation(sessionId) {
   sendToClients(clients, { type: 'session_invalidated', sessionId });
 }
 
-async function buildPrompt(sessionId, session, text, previousTool, effectiveTool) {
+function buildPreparedContinuationContext(prepared, previousTool, effectiveTool) {
+  if (!prepared) return '';
+
+  const summary = typeof prepared.summary === 'string' ? prepared.summary.trim() : '';
+  const continuationBody = typeof prepared.continuationBody === 'string'
+    ? prepared.continuationBody.trim()
+    : '';
+  const continuation = continuationBody
+    ? buildSessionContinuationContextFromBody(continuationBody, {
+        fromTool: previousTool,
+        toTool: effectiveTool,
+      })
+    : '';
+
+  if (!summary) {
+    return continuation;
+  }
+
+  let full = `[Conversation summary]\n\n${summary}`;
+  if (continuation) {
+    full = `${full}\n\n---\n\n${continuation}`;
+  }
+  return full;
+}
+
+function isPreparedForkContextCurrent(prepared, snapshot, contextHead) {
+  if (!prepared) return false;
+
+  const summary = typeof contextHead?.summary === 'string' ? contextHead.summary.trim() : '';
+  const activeFromSeq = Number.isInteger(contextHead?.activeFromSeq) ? contextHead.activeFromSeq : 0;
+  const expectedMode = summary ? 'summary' : 'history';
+
+  return (prepared.mode || 'history') === expectedMode
+    && (prepared.summary || '') === summary
+    && (prepared.activeFromSeq || 0) === activeFromSeq
+    && (prepared.preparedThroughSeq || 0) === (snapshot?.latestSeq || 0);
+}
+
+async function prepareForkContextSnapshot(sessionId, snapshot, contextHead) {
+  const summary = typeof contextHead?.summary === 'string' ? contextHead.summary.trim() : '';
+  const activeFromSeq = Number.isInteger(contextHead?.activeFromSeq) ? contextHead.activeFromSeq : 0;
+  const preparedThroughSeq = snapshot?.latestSeq || 0;
+
+  if (summary) {
+    const recentEvents = preparedThroughSeq > activeFromSeq
+      ? await loadHistory(sessionId, {
+          fromSeq: Math.max(1, activeFromSeq + 1),
+          includeBodies: true,
+        })
+      : [];
+    const continuationBody = prepareSessionContinuationBody(recentEvents);
+    return {
+      mode: 'summary',
+      summary,
+      continuationBody,
+      activeFromSeq,
+      preparedThroughSeq,
+      contextUpdatedAt: contextHead?.updatedAt || null,
+      updatedAt: nowIso(),
+      source: contextHead?.source || 'context_head',
+    };
+  }
+
+  if (preparedThroughSeq <= 0) {
+    return null;
+  }
+
+  const priorHistory = await loadHistory(sessionId, { includeBodies: true });
+  const continuationBody = prepareSessionContinuationBody(priorHistory);
+  if (!continuationBody) {
+    return null;
+  }
+
+  return {
+    mode: 'history',
+    summary: '',
+    continuationBody,
+    activeFromSeq: 0,
+    preparedThroughSeq,
+    contextUpdatedAt: null,
+    updatedAt: nowIso(),
+    source: 'history',
+  };
+}
+
+async function getOrPrepareForkContext(sessionId, snapshot, contextHead) {
+  const prepared = await getForkContext(sessionId);
+  if (isPreparedForkContextCurrent(prepared, snapshot, contextHead)) {
+    return prepared;
+  }
+
+  const next = await prepareForkContextSnapshot(sessionId, snapshot, contextHead);
+  if (next) {
+    await setForkContext(sessionId, next);
+    return next;
+  }
+
+  await clearForkContext(sessionId);
+  return null;
+}
+
+async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null) {
   const hasResume = !!session.claudeSessionId || !!session.codexThreadId;
   let continuationContext = '';
 
   if (!hasResume) {
     const contextHead = await getContextHead(sessionId);
-    if (contextHead?.summary) {
-      const recentEvents = await loadHistory(sessionId, {
-        fromSeq: Math.max(1, (contextHead.activeFromSeq || 0) + 1),
-        includeBodies: true,
-      });
-      const recentContext = recentEvents.length > 0
-        ? buildSessionContinuationContext(recentEvents, {
-            fromTool: previousTool,
-            toTool: effectiveTool,
-          })
-        : '';
-      continuationContext = `[Conversation summary]\n\n${contextHead.summary}`;
-      if (recentContext) {
-        continuationContext = `${continuationContext}\n\n---\n\n${recentContext}`;
-      }
-    } else {
-      const priorHistory = await loadHistory(sessionId, { includeBodies: true });
-      continuationContext = buildSessionContinuationContext(priorHistory, {
-        fromTool: previousTool,
-        toTool: effectiveTool,
-      });
-    }
+    const prepared = await getOrPrepareForkContext(
+      sessionId,
+      snapshot || await getHistorySnapshot(sessionId),
+      contextHead,
+    );
+    continuationContext = buildPreparedContinuationContext(prepared, previousTool, effectiveTool);
   }
 
   let actualText = text;
@@ -1686,7 +1777,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       requestId,
       folder: session.folder,
       tool: effectiveTool,
-      prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool),
+      prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot),
       internalOperation: options.internalOperation || null,
       options: {
         images: savedImages,
@@ -1819,10 +1910,12 @@ export async function forkSession(sessionId) {
   if (source.visitorId) return null;
   if (source.status === 'running') return null;
 
-  const [history, contextHead] = await Promise.all([
+  const [history, contextHead, snapshot] = await Promise.all([
     loadHistory(sessionId, { includeBodies: true }),
     getContextHead(sessionId),
+    getHistorySnapshot(sessionId),
   ]);
+  const forkContext = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
 
   const child = await createSession(source.folder, source.tool, buildForkSessionName(source), {
     group: source.group || '',
@@ -1851,6 +1944,15 @@ export async function forkSession(sessionId) {
     });
   } else {
     await clearContextHead(child.id);
+  }
+
+  if (forkContext) {
+    await setForkContext(child.id, {
+      ...forkContext,
+      updatedAt: nowIso(),
+    });
+  } else {
+    await clearForkContext(child.id);
   }
 
   broadcastSessionsInvalidation();

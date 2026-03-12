@@ -16,12 +16,18 @@ const {
   getHistory,
   getSession,
   killAll,
+  submitHttpMessage,
 } = await import('./chat/session-manager.mjs');
 const {
   appendEvents,
+  getForkContext,
   getContextHead,
+  setForkContext,
   setContextHead,
 } = await import('./chat/history.mjs');
+const {
+  getRunManifest,
+} = await import('./chat/runs.mjs');
 
 try {
   const parent = await createSession(workspace, 'codex', 'Source session', {
@@ -164,6 +170,54 @@ try {
   const parentContext = await getContextHead(parent.id);
   const childContext = await getContextHead(child.id);
   assert.deepEqual(childContext, parentContext, 'fork should copy the current context head');
+
+  const parentForkContext = await getForkContext(parent.id);
+  const childForkContext = await getForkContext(child.id);
+  assert.equal(parentForkContext?.preparedThroughSeq, 5, 'fork should prepare a reusable parent context snapshot');
+  assert.deepEqual(
+    { ...childForkContext, updatedAt: undefined },
+    { ...parentForkContext, updatedAt: undefined },
+    'fork should copy the prepared fork context to the child',
+  );
+  assert.equal(typeof childForkContext?.updatedAt, 'string', 'forked prepared context should keep its own timestamp');
+
+  const promptParent = await createSession(workspace, 'missing-tool', 'Prompt cache parent', {
+    group: 'Painting',
+    description: 'Prepared context prompt reuse',
+  });
+  await appendEvents(promptParent.id, [
+    {
+      type: 'message',
+      role: 'user',
+      content: 'Warm this up once for all future branches.',
+      timestamp: 10,
+    },
+    {
+      type: 'message',
+      role: 'assistant',
+      content: 'Warm template ready.',
+      timestamp: 11,
+    },
+  ]);
+  const promptChild = await forkSession(promptParent.id);
+  assert.ok(promptChild, 'second fork should succeed for prompt-cache validation');
+
+  await setForkContext(promptChild.id, {
+    mode: 'history',
+    summary: '',
+    continuationBody: '[Assistant]\nSENTINEL FORK CONTEXT',
+    activeFromSeq: 0,
+    preparedThroughSeq: promptChild.latestSeq,
+    updatedAt: '2026-03-11T00:00:00.000Z',
+    source: 'test',
+  });
+
+  const promptOutcome = await submitHttpMessage(promptChild.id, 'Branch into a new sub-feature.', [], {
+    requestId: 'req_prompt_cache',
+    queueIfBusy: false,
+  });
+  const manifest = await getRunManifest(promptOutcome.run.id);
+  assert.match(manifest?.prompt || '', /SENTINEL FORK CONTEXT/, 'first child turn should reuse the prepared fork context');
 
   console.log('test-session-forking: ok');
 } finally {
