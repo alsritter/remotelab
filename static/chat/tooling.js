@@ -34,6 +34,44 @@ function initResponsiveLayout() {
 }
 
 // ---- Thinking toggle / effort select ----
+let runtimeSelectionSyncPromise = Promise.resolve();
+let lastSyncedRuntimeSelectionPayload = '';
+
+function buildRuntimeSelectionPayload() {
+  if (visitorMode || !selectedTool) return null;
+  return {
+    selectedTool,
+    selectedModel: selectedModel || '',
+    selectedEffort: currentToolReasoningKind === 'enum' ? (selectedEffort || '') : '',
+    thinkingEnabled: currentToolReasoningKind === 'toggle' ? thinkingEnabled === true : false,
+    reasoningKind: currentToolReasoningKind || 'none',
+  };
+}
+
+function queueRuntimeSelectionSync() {
+  const payload = buildRuntimeSelectionPayload();
+  if (!payload) return;
+  const serialized = JSON.stringify(payload);
+  if (serialized === lastSyncedRuntimeSelectionPayload) {
+    return;
+  }
+  lastSyncedRuntimeSelectionPayload = serialized;
+  runtimeSelectionSyncPromise = runtimeSelectionSyncPromise
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await fetchJsonOrRedirect('/api/runtime-selection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: serialized,
+        });
+      } catch (error) {
+        lastSyncedRuntimeSelectionPayload = '';
+        console.warn('[runtime-selection] Failed to sync current selection:', error.message);
+      }
+    });
+}
+
 function updateThinkingUI() {
   thinkingToggle.classList.toggle("active", thinkingEnabled);
 }
@@ -43,11 +81,13 @@ thinkingToggle.addEventListener("click", () => {
   thinkingEnabled = !thinkingEnabled;
   localStorage.setItem("thinkingEnabled", thinkingEnabled);
   updateThinkingUI();
+  queueRuntimeSelectionSync();
 });
 
 effortSelect.addEventListener("change", () => {
   selectedEffort = effortSelect.value;
   if (selectedTool) localStorage.setItem(`selectedEffort_${selectedTool}`, selectedEffort);
+  queueRuntimeSelectionSync();
 });
 
 // ---- Sidebar collapse (desktop) ----
@@ -458,6 +498,7 @@ inlineToolSelect.addEventListener("change", async () => {
   localStorage.setItem("preferredTool", preferredTool);
   localStorage.setItem("selectedTool", selectedTool);
   await loadModelsForCurrentTool();
+  queueRuntimeSelectionSync();
 });
 
 // ---- Model select ----
@@ -570,6 +611,7 @@ async function loadModelsForCurrentTool() {
       effortSelect.style.display = "none";
       selectedEffort = null;
     }
+    queueRuntimeSelectionSync();
   } catch {
     currentToolModels = [];
     currentToolEffortLevels = null;
@@ -591,6 +633,7 @@ inlineModelSelect.addEventListener("change", () => {
       selectedEffort = modelData.defaultEffort;
     }
   }
+  queueRuntimeSelectionSync();
 });
 
 addToolNameInput.addEventListener("input", () => {

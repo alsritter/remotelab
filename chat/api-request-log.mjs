@@ -107,6 +107,7 @@ function classifyApiRoute(method, pathname) {
   if (pathname === '/api/push/subscribe' && method === 'POST') return 'POST /api/push/subscribe';
   if (pathname === '/api/apps' && method === 'GET') return 'GET /api/apps';
   if (pathname === '/api/apps' && method === 'POST') return 'POST /api/apps';
+  if (pathname === '/api/runtime-selection' && method === 'POST') return 'POST /api/runtime-selection';
   if (pathname.startsWith('/api/apps/') && method === 'PATCH') return 'PATCH /api/apps/:appId';
   if (pathname.startsWith('/api/apps/') && method === 'DELETE') return 'DELETE /api/apps/:appId';
   if (pathname.startsWith('/api/images/') && method === 'GET') return 'GET /api/images/:imageName';

@@ -6,6 +6,7 @@ import { AUTH_FILE } from '../lib/config.mjs';
 import {
   APPROVED_QUEUE,
   DEFAULT_ROOT_DIR,
+  DEFAULT_AUTOMATION_SETTINGS,
   buildEmailThreadExternalTriggerId,
   buildThreadReferencesHeader,
   decodeMaybeEncodedMailboxText,
@@ -14,6 +15,7 @@ import {
   listQueue,
   updateQueueItem,
 } from '../lib/agent-mailbox.mjs';
+import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
 function parseArgs(argv) {
   const positional = [];
@@ -164,7 +166,9 @@ function buildReplyPrompt(item) {
   return [
     'An approved inbound email needs a reply.',
     'Write the exact plain-text email body to send back to the sender.',
-    'Keep the tone natural and helpful.',
+    'Take the time needed to fully answer everything the sender is asking.',
+    'Prefer completeness, careful troubleshooting, and explicit resolution over speed or brevity.',
+    'Keep the tone natural, calm, and helpful.',
     'Do not include email headers, markdown fences, or internal process notes.',
     '',
     'Inbound email metadata:',
@@ -176,6 +180,42 @@ function buildReplyPrompt(item) {
     'Original email:',
     body || '(empty body)',
   ].join('\n');
+}
+
+function hasExplicitPinnedRuntime(automation) {
+  const session = automation?.session || {};
+  return trimString(session.tool) && trimString(session.tool) !== DEFAULT_AUTOMATION_SETTINGS.session.tool
+    || !!trimString(session.model)
+    || !!trimString(session.effort)
+    || session.thinking === true;
+}
+
+function resolveReplyRuntimeSelection(automation, uiSelection) {
+  const session = automation?.session || {};
+  const pinned = hasExplicitPinnedRuntime(automation);
+  const selectedTool = trimString(uiSelection?.selectedTool);
+  const selectedModel = trimString(uiSelection?.selectedModel);
+  const selectedEffort = trimString(uiSelection?.selectedEffort);
+  const reasoningKind = trimString(uiSelection?.reasoningKind).toLowerCase();
+  const defaultTool = trimString(DEFAULT_AUTOMATION_SETTINGS.session.tool) || 'codex';
+  const fallbackTool = trimString(session.tool) || defaultTool;
+  const effectiveTool = pinned
+    ? fallbackTool
+    : selectedTool || fallbackTool || defaultTool;
+  const uiMatchesEffectiveTool = !!selectedTool && selectedTool === effectiveTool;
+
+  return {
+    tool: effectiveTool || defaultTool,
+    model: pinned
+      ? trimString(session.model)
+      : (uiMatchesEffectiveTool ? selectedModel : ''),
+    effort: pinned
+      ? trimString(session.effort)
+      : (uiMatchesEffectiveTool && reasoningKind === 'enum' ? selectedEffort : ''),
+    thinking: pinned
+      ? session.thinking === true
+      : (uiMatchesEffectiveTool && reasoningKind === 'toggle' && uiSelection?.thinkingEnabled === true),
+  };
 }
 
 function buildCompletionTarget(item, rootDir, requestId) {
@@ -220,9 +260,11 @@ async function submitApprovedItem(item, rootDir, automation, baseUrl, cookie) {
     })
     || `mailbox:${item.id}`;
   const completionTarget = buildCompletionTarget(item, rootDir, requestId);
+  const uiSelection = await loadUiRuntimeSelection();
+  const runtimeSelection = resolveReplyRuntimeSelection(automation, uiSelection);
   const sessionPayload = {
     folder: automation.session.folder,
-    tool: automation.session.tool,
+    tool: runtimeSelection.tool,
     name: buildSessionName(item),
     appId: 'email',
     appName: 'Email',
@@ -246,14 +288,16 @@ async function submitApprovedItem(item, rootDir, automation, baseUrl, cookie) {
   const messagePayload = {
     requestId,
     text: buildReplyPrompt(item),
-    tool: automation.session.tool,
-    thinking: automation.session.thinking === true,
+    tool: runtimeSelection.tool,
   };
-  if (trimString(automation.session.model)) {
-    messagePayload.model = automation.session.model;
+  if (runtimeSelection.thinking) {
+    messagePayload.thinking = true;
   }
-  if (trimString(automation.session.effort)) {
-    messagePayload.effort = automation.session.effort;
+  if (runtimeSelection.model) {
+    messagePayload.model = runtimeSelection.model;
+  }
+  if (runtimeSelection.effort) {
+    messagePayload.effort = runtimeSelection.effort;
   }
 
   const submitResult = await requestJson(baseUrl, `/api/sessions/${session.id}/messages`, {

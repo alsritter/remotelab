@@ -12,6 +12,7 @@ import {
   parseCookies, setCookie, clearCookie,
   getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
+import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
   applyAppTemplateToSession,
@@ -835,6 +836,32 @@ export async function handleRequest(req, res) {
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/runtime-selection' && req.method === 'POST') {
+    if (authSession?.role === 'visitor') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return;
+    }
+    let body;
+    try { body = await readBody(req, 4096); } catch (err) {
+      writeJson(res, err.code === 'BODY_TOO_LARGE' ? 413 : 400, { error: err.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request' });
+      return;
+    }
+    let payload;
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return;
+    }
+    try {
+      const selection = await saveUiRuntimeSelection(payload || {});
+      writeJson(res, 200, { selection });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to save runtime selection' });
     }
     return;
   }

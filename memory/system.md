@@ -159,6 +159,10 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Keep that selection logic out of the core chat-history/domain primitives. A better boundary is: chat core exposes raw normalized events, while connectors or other business-facing layers apply a shared helper library to choose the outbound reply they want.
 - A practical default rule is: skip known artifact kinds such as `todo_list`, and if the trailing assistant text is only a checklist block, fall back to the nearest earlier substantive assistant reply from the same run.
 
+### Backend Connectors Cannot Inherit UI Runtime From LocalStorage (2026-03-12)
+- If an external connector should reuse the operator's current tool/model/reasoning choice, the browser must sync that selection to server-readable state; backend workers cannot see `localStorage`.
+- Treat the synced selection as the live runtime preference for connector-triggered sessions, and let connector-specific pinned overrides win only when they are explicitly configured.
+
 ### Post-Run Integrations Should Live Outside `chat/` (2026-03-11)
 - Business-specific side effects triggered by finished runs, such as outbound email delivery, should not live under the core `chat/` domain modules even when the chat server invokes them.
 - A cleaner split is: `chat/` owns sessions, runs, and event history; integration modules under `lib/` or connector-specific areas consume those primitives and perform provider-specific delivery work.

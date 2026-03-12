@@ -25,6 +25,7 @@ const {
   mailboxPaths,
   saveMailboxAutomation,
 } = await import(pathToFileURL(join(repoRoot, 'lib', 'agent-mailbox.mjs')).href);
+const { saveUiRuntimeSelection } = await import(pathToFileURL(join(repoRoot, 'lib', 'runtime-selection.mjs')).href);
 
 const requests = [];
 const sessionCreates = [];
@@ -98,6 +99,13 @@ try {
     },
   });
 
+  await saveUiRuntimeSelection({
+    selectedTool: 'claude',
+    selectedModel: 'claude-sonnet-4-5',
+    thinkingEnabled: true,
+    reasoningKind: 'toggle',
+  });
+
   const ingested = ingestRawMessage(
     [
       'From: owner@example.com',
@@ -152,11 +160,17 @@ try {
   assert.equal(sessionCreates.length, 1);
   assert.equal(sessionCreates[0].appId, 'email');
   assert.equal(sessionCreates[0].appName, 'Email');
+  assert.equal(sessionCreates[0].tool, 'claude');
   assert.equal(sessionCreates[0].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[0].completionTargets[0].inReplyTo, '<root-thread@example.com>');
   assert.equal(sessionCreates[0].completionTargets[0].references, '<root-thread@example.com>');
   assert.equal(sessionCreates[0].completionTargets[0].subject, 'Re: hello!');
   assert.match(messageSubmissions[0].text, /please take a response to test!/);
+  assert.match(messageSubmissions[0].text, /Prefer completeness, careful troubleshooting, and explicit resolution over speed or brevity\./);
+  assert.equal(messageSubmissions[0].tool, 'claude');
+  assert.equal(messageSubmissions[0].model, 'claude-sonnet-4-5');
+  assert.equal(messageSubmissions[0].thinking, true);
+  assert.equal(messageSubmissions[0].effort, undefined);
 
   const updated = findQueueItem(approved.id, mailboxRoot)?.item;
   assert.equal(updated?.status, 'processing_for_reply');
@@ -198,6 +212,13 @@ try {
   assert.equal(approvedFollowUp?.queue, 'approved');
   assert.equal(approvedFollowUp?.review?.status, 'auto_approved');
 
+  await saveUiRuntimeSelection({
+    selectedTool: 'codex',
+    selectedModel: 'gpt-5-codex',
+    selectedEffort: 'high',
+    reasoningKind: 'enum',
+  });
+
   const secondWorker = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(repoRoot, 'scripts', 'agent-mail-worker.mjs'), '--once', '--root', mailboxRoot], {
       cwd: repoRoot,
@@ -231,12 +252,17 @@ try {
   assert.equal(messageSubmissions.length, 2);
   assert.equal(sessionCreates[1].appId, 'email');
   assert.equal(sessionCreates[1].appName, 'Email');
+  assert.equal(sessionCreates[1].tool, 'codex');
   assert.equal(sessionCreates[1].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[1].completionTargets[0].inReplyTo, '<follow-up@example.com>');
   assert.equal(sessionCreates[1].completionTargets[0].references, '<root-thread@example.com> <follow-up@example.com>');
   assert.match(messageSubmissions[1].text, /here is the follow-up reply in the same thread\./);
   assert.doesNotMatch(messageSubmissions[1].text, /On Tue, Mar 10, 2026 at 9:56 PM <rowan@example\.com> wrote:/);
   assert.doesNotMatch(messageSubmissions[1].text, /^> please take a response to test!$/m);
+  assert.equal(messageSubmissions[1].tool, 'codex');
+  assert.equal(messageSubmissions[1].model, 'gpt-5-codex');
+  assert.equal(messageSubmissions[1].effort, 'high');
+  assert.equal(messageSubmissions[1].thinking, undefined);
 
   const updatedFollowUp = findQueueItem(approvedFollowUp.id, mailboxRoot)?.item;
   assert.equal(updatedFollowUp?.status, 'processing_for_reply');
