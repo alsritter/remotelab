@@ -237,6 +237,7 @@ Reusable AI workflows shareable via link. Each App defines: name, systemPrompt, 
 
 ### P2 — Future
 - [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
+- [ ] First-run onboarding App/session — on a fresh RemoteLab Live launch, seed a built-in guide App and intro session so the owner sees capabilities and suggested next actions instead of an empty session list; decide whether it should behave like a persistent default surface, a dismissible starter, or the same object as the control inbox
 - [ ] Queued follow-up composer buffer — while a session is still streaming a reply, let the user stage another message in a buffer and auto-submit it as a fresh turn immediately after the active response finishes; external connectors like Feishu should share the same staged-turn contract and later define an interrupt/replace policy
 - [ ] Session fork follow-ups — extend the shipped hard-clone head-fork with optional `Fork from here`, lightweight lineage navigation, and exact historical fork support when compaction-safe snapshots exist
 - [ ] Broaden theming beyond system light/dark — keep v1 system-driven, then add optional explicit theme selection and more color palettes, preferably reusing VS Code-style open theme configs/tokens where that fits cleanly
