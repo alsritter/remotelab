@@ -1010,10 +1010,17 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
   if (!forceRefresh && runtime.authCookie) {
     return runtime.authCookie;
   }
-  if (!runtime.authToken) {
-    runtime.authToken = await readOwnerToken();
+  if (forceRefresh) {
+    runtime.authCookie = '';
+    runtime.authToken = '';
   }
-  runtime.authCookie = await loginWithToken(runtime.config.chatBaseUrl, runtime.authToken);
+  if (!runtime.authToken) {
+    runtime.authToken = typeof runtime.readOwnerToken === 'function'
+      ? await runtime.readOwnerToken()
+      : await readOwnerToken();
+  }
+  const login = typeof runtime.loginWithToken === 'function' ? runtime.loginWithToken : loginWithToken;
+  runtime.authCookie = await login(runtime.config.chatBaseUrl, runtime.authToken);
   return runtime.authCookie;
 }
 
@@ -1433,6 +1440,7 @@ export {
   buildRemoteLabMessage,
   compileFeishuReplyText,
   createRuntimeContext,
+  ensureAuthCookie,
   ensureAllowedSendersFile,
   extractLocalCommand,
   generateRemoteLabReply,

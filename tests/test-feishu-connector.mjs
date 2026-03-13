@@ -14,6 +14,7 @@ const {
   createRuntimeContext,
   buildRemoteLabMessage,
   compileFeishuReplyText,
+  ensureAuthCookie,
   ensureAllowedSendersFile,
   extractLocalCommand,
   generateRemoteLabReply,
@@ -70,6 +71,28 @@ assert.equal(handled[0].metadata.status, 'silent_no_reply');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 assert.equal(handled[0].metadata.sessionId, 'session_test_1');
 assert.equal(runtime.processingMessageIds.size, 0, 'message processing state should always be cleaned up');
+
+const authRefreshRuntime = {
+  authCookie: 'session_token=stale-cookie',
+  authToken: 'stale-token',
+  config: { chatBaseUrl: 'http://127.0.0.1:7690' },
+  readOwnerToken: async () => 'fresh-token',
+  loginWithToken: async (_baseUrl, token) => `session_token=${token}`,
+};
+
+assert.equal(
+  await ensureAuthCookie(authRefreshRuntime, false),
+  'session_token=stale-cookie',
+  'cached auth cookies should be reused when no refresh is needed',
+);
+
+assert.equal(
+  await ensureAuthCookie(authRefreshRuntime, true),
+  'session_token=fresh-token',
+  'forced auth refresh should re-read the current owner token before logging in again',
+);
+assert.equal(authRefreshRuntime.authToken, 'fresh-token');
+assert.equal(authRefreshRuntime.authCookie, 'session_token=fresh-token');
 
 assert.equal(normalizeReplyText('  \n\n  '), '');
 assert.equal(normalizeReplyText('  hello\r\n'), 'hello');

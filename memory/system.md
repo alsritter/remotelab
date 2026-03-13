@@ -32,6 +32,12 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If coworkers cannot search the bot or add it to groups, first check app availability scope, current version publish/apply status, and tenant policy before touching connector code.
 - For practical internal rollout, prefer a real team tenant over a purely personal self-test tenant; for external-tenant usage, move to a marketplace / distributable app flow.
 
+### Long-Lived Connectors Must Re-Read Owner Tokens On Auth Refresh (2026-03-13)
+- A connector can look healthy for hours while reusing a cached owner session cookie, then suddenly start failing every upstream request after that cookie expires or the owner rotates `auth.json`.
+- If forced re-auth keeps reusing the connector's in-memory owner token, `/?token=...` can redirect to `/login` without a new `Set-Cookie`, and the connector surfaces misleading downstream errors even though RemoteLab itself is up.
+- On forced auth refresh, clear both the cached cookie and the cached owner token, reread the current owner token from disk, then log in again before retrying the API request.
+- Keep a regression test that starts from a stale in-memory token and verifies that refresh re-reads the latest token instead of trusting cached state.
+
 ### Memory Bootstrap Hygiene (2026-03-06)
 - Fresh or partially initialized RemoteLab setups may be missing `~/.remotelab/memory/skills.md`.
 - If session startup expects that file, create a minimal placeholder index instead of treating the absence as a hard failure.
