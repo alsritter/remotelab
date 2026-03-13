@@ -19,7 +19,7 @@ const BODY_FIELD_BY_TYPE = {
   tool_result: 'output',
 };
 const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning']);
-const DEFERRED_INDEX_BODY_TYPES = new Set(['reasoning', 'template_context', 'tool_use', 'tool_result']);
+const DEFERRED_INDEX_BODY_TYPES = new Set(['message', 'reasoning', 'template_context', 'tool_use', 'tool_result']);
 const INLINE_BODY_LIMITS = {
   message: 64 * 1024,
   reasoning: 0,
@@ -149,10 +149,18 @@ function serializeEventForIndex(event, options = {}) {
   }
   const inlineBody = typeof next[bodyField] === 'string' ? next[bodyField] : '';
   const hasBody = !!inlineBody || next.bodyAvailable === true || !!next.bodyRef;
+  const preview = next.type === 'message'
+    ? ''
+    : (inlineBody ? clipMiddle(inlineBody, previewLimitFor(next)) : '');
   next[bodyField] = '';
   next.bodyField = bodyField;
   next.bodyAvailable = hasBody;
   next.bodyLoaded = false;
+  if (preview) {
+    next.bodyPreview = preview;
+  } else {
+    delete next.bodyPreview;
+  }
   if (hasBody && !Number.isInteger(next.bodyBytes) && inlineBody) {
     next.bodyBytes = Buffer.byteLength(inlineBody, 'utf8');
   }

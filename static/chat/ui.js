@@ -2,6 +2,36 @@ function renderUiIcon(name, className = "") {
   return window.RemoteLabIcons?.render(name, { className }) || "";
 }
 
+function renderMarkdownIntoNode(node, markdown) {
+  const source = typeof markdown === "string" ? markdown : "";
+  const rendered = marked.parse(source);
+  if (rendered.trim()) {
+    node.innerHTML = rendered;
+    enhanceCodeBlocks(node);
+    enhanceRenderedContentLinks(node);
+    return true;
+  }
+  node.textContent = formatDecodedDisplayText(source);
+  return !!source.trim();
+}
+
+function markLazyEventBodyNode(node, evt, { preview = "", renderMode = "text" } = {}) {
+  if (!node || !evt?.bodyAvailable || evt.bodyLoaded) return false;
+  if (!Number.isInteger(evt.seq) || evt.seq < 1) return false;
+  node.dataset.eventSeq = String(evt.seq);
+  node.dataset.bodyPending = "true";
+  node.dataset.bodyRender = renderMode;
+  const resolvedPreview = typeof preview === "string" && preview
+    ? preview
+    : (evt.bodyPreview || "");
+  if (resolvedPreview) {
+    node.dataset.preview = resolvedPreview;
+  } else {
+    delete node.dataset.preview;
+  }
+  return true;
+}
+
 // ---- Render functions ----
 function renderMessage(evt) {
   const role = evt.role || "assistant";
@@ -28,10 +58,19 @@ function renderMessage(evt) {
       }
       bubble.appendChild(imgWrap);
     }
-    if (evt.content) {
+    if (evt.content || evt.bodyAvailable) {
       const span = document.createElement("span");
-      span.textContent = formatDecodedDisplayText(evt.content);
+      const preview = evt.content || evt.bodyPreview || "Load message…";
+      span.textContent = formatDecodedDisplayText(preview);
       bubble.appendChild(span);
+      if (markLazyEventBodyNode(span, evt, {
+        preview: evt.bodyPreview || evt.content || "",
+        renderMode: "text",
+      })) {
+        if (typeof queueHydrateLazyNodes === "function") {
+          queueHydrateLazyNodes(wrap);
+        }
+      }
     }
     appendMessageTimestamp(bubble, evt.timestamp, "msg-user-time");
     wrap.appendChild(bubble);
@@ -39,12 +78,24 @@ function renderMessage(evt) {
   } else {
     const div = document.createElement("div");
     div.className = "msg-assistant md-content";
+    const content = document.createElement("div");
+    content.className = "msg-assistant-body";
     if (evt.content) {
-      const rendered = marked.parse(evt.content);
-      if (!rendered.trim()) return;
-      div.innerHTML = rendered;
-      enhanceCodeBlocks(div);
-      enhanceRenderedContentLinks(div);
+      const didRender = renderMarkdownIntoNode(content, evt.content);
+      if (!didRender) return;
+    } else if (evt.bodyAvailable) {
+      content.textContent = "Load message…";
+    } else {
+      return;
+    }
+    div.appendChild(content);
+    if (markLazyEventBodyNode(content, evt, {
+      preview: evt.bodyPreview || "",
+      renderMode: "markdown",
+    })) {
+      if (typeof queueHydrateLazyNodes === "function") {
+        queueHydrateLazyNodes(div);
+      }
     }
     appendMessageTimestamp(div, evt.timestamp, "msg-assistant-time");
     messagesInner.appendChild(div);

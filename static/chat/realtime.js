@@ -388,6 +388,13 @@ function appendMessageTimestamp(container, stamp, extraClass = "") {
   container.appendChild(time);
 }
 
+function queueHydrateLazyNodes(root) {
+  if (!root) return;
+  setTimeout(() => {
+    hydrateLazyNodes(root).catch(() => {});
+  }, 0);
+}
+
 function renderEvent(evt, autoScroll) {
   let rendered = false;
 
@@ -668,13 +675,40 @@ function eventBodyCacheKey(sessionId, seq) {
   return `${sessionId}:${seq}`;
 }
 
+const EVENT_BODY_FETCH_CONCURRENCY = 6;
+const eventBodyQueue = [];
+let activeEventBodyFetches = 0;
+
+function pumpEventBodyQueue() {
+  while (activeEventBodyFetches < EVENT_BODY_FETCH_CONCURRENCY && eventBodyQueue.length > 0) {
+    const next = eventBodyQueue.shift();
+    if (!next) break;
+    activeEventBodyFetches += 1;
+    Promise.resolve()
+      .then(next.run)
+      .then(next.resolve, next.reject)
+      .finally(() => {
+        activeEventBodyFetches = Math.max(0, activeEventBodyFetches - 1);
+        pumpEventBodyQueue();
+      });
+  }
+}
+
+function scheduleEventBodyFetch(run) {
+  return new Promise((resolve, reject) => {
+    eventBodyQueue.push({ run, resolve, reject });
+    pumpEventBodyQueue();
+  });
+}
+
 async function fetchEventBody(sessionId, seq) {
   const key = eventBodyCacheKey(sessionId, seq);
   if (eventBodyCache.has(key)) return eventBodyCache.get(key);
   if (eventBodyRequests.has(key)) return eventBodyRequests.get(key);
-  const request = fetchJsonOrRedirect(
+  const request = scheduleEventBodyFetch(() => fetchJsonOrRedirect(
     `/api/sessions/${encodeURIComponent(sessionId)}/events/${seq}/body`,
-  )
+    { revalidate: false },
+  ))
     .then((data) => {
       const body = data.body || null;
       eventBodyCache.set(key, body);
@@ -687,6 +721,17 @@ async function fetchEventBody(sessionId, seq) {
     });
   eventBodyRequests.set(key, request);
   return request;
+}
+
+function applyLazyBodyToNode(node, body) {
+  if (!node) return;
+  const renderMode = node.dataset.bodyRender || "text";
+  const value = formatDecodedDisplayText(body?.value || node.dataset.preview || "");
+  if (renderMode === "markdown" && typeof renderMarkdownIntoNode === "function") {
+    renderMarkdownIntoNode(node, value);
+    return;
+  }
+  node.textContent = value;
 }
 
 function cleanBase64TextForDisplay(text) {
@@ -742,7 +787,7 @@ async function hydrateLazyNode(node) {
   node.dataset.bodyPending = "loading";
   try {
     const body = await fetchEventBody(sessionId, seq);
-    node.textContent = formatDecodedDisplayText(body?.value || node.dataset.preview || "");
+    applyLazyBodyToNode(node, body);
     node.dataset.bodyPending = "false";
   } catch (error) {
     console.warn("[event-body] Failed to load body:", error.message);

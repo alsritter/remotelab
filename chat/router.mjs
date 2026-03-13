@@ -450,6 +450,8 @@ function writeFileCached(req, res, contentType, body, {
   });
 }
 
+const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, max-age=1296000, immutable';
+
 function canAccessSession(authSession, sessionId) {
   if (!authSession) return false;
   if (authSession.role !== 'visitor') return true;
@@ -767,7 +769,10 @@ export async function handleRequest(req, res) {
       writeJson(res, 404, { error: 'Event body not found' });
       return;
     }
-    writeJsonCached(req, res, { body });
+    writeJsonCached(req, res, { body }, {
+      cacheControl: IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL,
+      vary: '',
+    });
     return;
   }
 
