@@ -185,6 +185,12 @@ try {
       Cookie: ownerCookie,
     });
     assert.equal(appsResponse.status, 200, 'owner should be able to load the apps catalog');
+    const basicChatApp = (appsResponse.json?.apps || []).find((app) => app.id === 'app_basic_chat');
+    assert.equal(basicChatApp?.shareEnabled, false, 'Basic Chat should stay internal-only');
+    assert.equal(typeof basicChatApp?.shareToken, 'undefined', 'Basic Chat should not expose a public share token');
+    const createAppStarter = (appsResponse.json?.apps || []).find((app) => app.id === 'app_create_app');
+    assert.equal(createAppStarter?.shareEnabled, false, 'Create App should stay internal-only');
+    assert.equal(typeof createAppStarter?.shareToken, 'undefined', 'Create App should not expose a public share token');
     const videoCutApp = (appsResponse.json?.apps || []).find((app) => app.id === 'app_video_cut');
     assert.ok(videoCutApp?.shareToken, 'built-in Video Cut app should expose a share token');
 

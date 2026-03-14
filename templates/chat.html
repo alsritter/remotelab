@@ -302,8 +302,89 @@ body {
   flex: 1;
   display: none;
   padding: 12px;
+  overflow-y: auto;
 }
 .settings-panel.visible { display: block; }
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.settings-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-section-note {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-apps-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings-app-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 10px;
+}
+.settings-app-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.settings-app-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-app-kind {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.settings-app-description {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-app-link {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.settings-app-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.settings-app-btn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.settings-app-btn:hover {
+  background: var(--bg-tertiary);
+}
+.settings-app-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .settings-placeholder {
   border: 1px dashed var(--border);
   border-radius: 12px;
@@ -1389,6 +1470,13 @@ body.visitor-mode .gesture-pill { display: none !important; }
       </div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="settings-panel" id="settingsPanel">
+        <div class="settings-section">
+          <div class="settings-section-title">Apps</div>
+          <div class="settings-section-note">Open a session for an app, or copy a share link for public apps like `Video Cut`.</div>
+          <div class="settings-apps-list" id="settingsAppsList">
+            <div class="settings-app-empty">Loading apps…</div>
+          </div>
+        </div>
         <div class="settings-placeholder">Settings will live here later. For now this replaces the retired Progress tab.</div>
       </div>
       <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}">Build {{BUILD_LABEL}}</div>

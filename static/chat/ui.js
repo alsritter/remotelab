@@ -822,6 +822,180 @@ function openSessionsSidebar() {
 }
 
 const CREATE_APP_TEMPLATE_APP_ID = "app_create_app";
+const BASIC_CHAT_TEMPLATE_APP_ID = "app_basic_chat";
+
+function getOrderedSettingsApps() {
+  const apps = Array.isArray(availableApps)
+    ? availableApps.filter((app) => isTemplateAppScopeId(app?.id))
+    : [];
+  return apps.sort((a, b) => {
+    const rank = (app) => {
+      if (app?.id === BASIC_CHAT_TEMPLATE_APP_ID) return 0;
+      if (app?.id === CREATE_APP_TEMPLATE_APP_ID) return 1;
+      if (app?.id === "app_video_cut") return 2;
+      return 3;
+    };
+    return rank(a) - rank(b) || String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { sensitivity: "base" });
+  });
+}
+
+function buildAppShareUrl(app) {
+  const shareToken = typeof app?.shareToken === "string" ? app.shareToken.trim() : "";
+  if (!shareToken || app?.shareEnabled === false) return "";
+  return `${window.location.origin}/app/${encodeURIComponent(shareToken)}`;
+}
+
+function summarizeAppDescription(app) {
+  if (app?.id === BASIC_CHAT_TEMPLATE_APP_ID) {
+    return "Default normal conversation app for everyday RemoteLab sessions.";
+  }
+  const welcome = typeof app?.welcomeMessage === "string" ? app.welcomeMessage.trim() : "";
+  if (welcome) {
+    return welcome.split(/\n+/)[0].trim();
+  }
+  const systemPrompt = typeof app?.systemPrompt === "string" ? app.systemPrompt.trim() : "";
+  if (systemPrompt) {
+    return `${systemPrompt.slice(0, 120)}${systemPrompt.length > 120 ? "…" : ""}`;
+  }
+  return app?.shareEnabled === false
+    ? "Internal starter app. Opens owner sessions only."
+    : "Shareable app.";
+}
+
+function getAppKindLabel(app) {
+  const labels = [];
+  labels.push(app?.builtin ? "Built-in" : "Custom");
+  labels.push(app?.shareEnabled === false ? "Internal" : "Shareable");
+  return labels.join(" · ");
+}
+
+function setTemporaryButtonText(button, nextText, durationMs = 1400) {
+  if (!button) return;
+  if (!button.dataset.originalLabel) {
+    button.dataset.originalLabel = button.textContent || "";
+  }
+  button.textContent = nextText;
+  window.clearTimeout(button._resetLabelTimer);
+  button._resetLabelTimer = window.setTimeout(() => {
+    button.textContent = button.dataset.originalLabel || button.textContent;
+  }, durationMs);
+}
+
+function createSessionForApp(app, { closeSidebar = true } = {}) {
+  if (!app?.id) return false;
+  if (closeSidebar && !isDesktop) closeSidebarFn();
+  const tool =
+    (typeof app?.tool === "string" && app.tool.trim())
+    || preferredTool
+    || selectedTool
+    || toolsList[0]?.id;
+  if (!tool) return false;
+  if (typeof switchTab === "function") {
+    switchTab("sessions");
+  }
+  return dispatchAction({
+    action: "create",
+    folder: "~",
+    tool,
+    sourceId: DEFAULT_APP_ID,
+    sourceName: DEFAULT_APP_NAME,
+    appId: app.id,
+  });
+}
+
+function renderSettingsAppsPanel() {
+  if (!settingsAppsList) return;
+  if (visitorMode) {
+    settingsAppsList.innerHTML = '<div class="settings-app-empty">Apps are only available to the owner.</div>';
+    return;
+  }
+
+  const apps = getOrderedSettingsApps();
+  settingsAppsList.innerHTML = "";
+  if (apps.length === 0) {
+    settingsAppsList.innerHTML = '<div class="settings-app-empty">No apps yet.</div>';
+    return;
+  }
+
+  for (const app of apps) {
+    const card = document.createElement("div");
+    card.className = "settings-app-card";
+
+    const header = document.createElement("div");
+    header.className = "settings-app-card-header";
+
+    const name = document.createElement("div");
+    name.className = "settings-app-name";
+    name.textContent = app.name || "Untitled App";
+
+    const kind = document.createElement("div");
+    kind.className = "settings-app-kind";
+    kind.textContent = getAppKindLabel(app);
+
+    header.appendChild(name);
+    header.appendChild(kind);
+    card.appendChild(header);
+
+    const description = document.createElement("div");
+    description.className = "settings-app-description";
+    description.textContent = summarizeAppDescription(app);
+    card.appendChild(description);
+
+    const shareUrl = buildAppShareUrl(app);
+    if (shareUrl) {
+      const link = document.createElement("div");
+      link.className = "settings-app-link";
+      link.textContent = shareUrl;
+      card.appendChild(link);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "settings-app-actions";
+
+    const openSessionBtn = document.createElement("button");
+    openSessionBtn.type = "button";
+    openSessionBtn.className = "settings-app-btn";
+    openSessionBtn.textContent = "Open Session";
+    openSessionBtn.addEventListener("click", () => {
+      createSessionForApp(app);
+    });
+    actions.appendChild(openSessionBtn);
+
+    if (shareUrl) {
+      const copyLinkBtn = document.createElement("button");
+      copyLinkBtn.type = "button";
+      copyLinkBtn.className = "settings-app-btn";
+      copyLinkBtn.textContent = "Copy Link";
+      copyLinkBtn.addEventListener("click", async () => {
+        try {
+          if (typeof copyText === "function") {
+            await copyText(shareUrl);
+          } else if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(shareUrl);
+          } else {
+            throw new Error("clipboard unavailable");
+          }
+          setTemporaryButtonText(copyLinkBtn, "Copied");
+        } catch {
+          setTemporaryButtonText(copyLinkBtn, "Copy failed");
+        }
+      });
+      actions.appendChild(copyLinkBtn);
+
+      const openLinkBtn = document.createElement("button");
+      openLinkBtn.type = "button";
+      openLinkBtn.className = "settings-app-btn";
+      openLinkBtn.textContent = "Open Link";
+      openLinkBtn.addEventListener("click", () => {
+        window.open(shareUrl, "_blank", "noopener,noreferrer");
+      });
+      actions.appendChild(openLinkBtn);
+    }
+
+    card.appendChild(actions);
+    settingsAppsList.appendChild(card);
+  }
+}
 
 function createNewSessionShortcut({ closeSidebar = true } = {}) {
   if (closeSidebar && !isDesktop) closeSidebarFn();
@@ -835,7 +1009,7 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
     tool,
     sourceId,
     sourceName,
-    appId: activeSessionAppFilter !== APP_FILTER_ALL_VALUE ? activeSessionAppFilter : "",
+    appId: activeSessionAppFilter !== APP_FILTER_ALL_VALUE ? activeSessionAppFilter : BASIC_CHAT_TEMPLATE_APP_ID,
   });
 }
 

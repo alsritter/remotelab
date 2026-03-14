@@ -141,6 +141,7 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
+const settingsAppsList = document.getElementById("settingsAppsList");
 const newAppBtn = document.getElementById("newAppBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
 const messagesEl = document.getElementById("messages");
@@ -233,6 +234,7 @@ const APP_FILTER_ALL_VALUE = "__all__";
 const USER_FILTER_OWN_VALUE = "__own__";
 const USER_FILTER_ALL_VALUE = "__all_users__";
 const DEFAULT_APP_ID = "chat";
+const BASIC_CHAT_APP_ID = "app_basic_chat";
 const DEFAULT_APP_NAME = "Chat";
 const sessionStateModel = window.RemoteLabSessionStateModel;
 if (!sessionStateModel) {
@@ -607,8 +609,11 @@ function getEffectiveSessionSourceName(session) {
 }
 
 function getEffectiveSessionTemplateAppId(session) {
-  const normalized = normalizeAppId(session?.appId);
-  return isTemplateAppScopeId(normalized) ? normalized : "";
+  const explicitTemplateId = normalizeAppId(session?.templateAppId || session?.appId);
+  if (isTemplateAppScopeId(explicitTemplateId)) {
+    return explicitTemplateId;
+  }
+  return BASIC_CHAT_APP_ID;
 }
 
 function createSourceCatalogEntry(app) {

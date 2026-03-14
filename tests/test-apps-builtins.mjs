@@ -12,6 +12,7 @@ process.env.HOME = tempHome;
 const appsModule = await import(pathToFileURL(join(repoRoot, 'chat', 'apps.mjs')).href);
 
 const {
+  BASIC_CHAT_APP_ID,
   CREATE_APP_APP_ID,
   DEFAULT_APP_ID,
   EMAIL_APP_ID,
@@ -29,15 +30,17 @@ try {
   const initial = await listApps();
   assert.deepEqual(
     initial.map((app) => app.id),
-    ['chat', 'email', 'app_create_app', 'app_video_cut'],
+    ['chat', 'email', 'app_basic_chat', 'app_create_app', 'app_video_cut'],
     'built-in apps should include connector scopes plus shipped starter apps',
   );
   assert.equal(DEFAULT_APP_ID, 'chat');
   assert.equal(EMAIL_APP_ID, 'email');
+  assert.equal(BASIC_CHAT_APP_ID, 'app_basic_chat');
   assert.equal(CREATE_APP_APP_ID, 'app_create_app');
   assert.equal(VIDEO_CUT_APP_ID, 'app_video_cut');
   assert.equal(isBuiltinAppId('Chat'), true);
   assert.equal(isBuiltinAppId('Email'), true);
+  assert.equal(isBuiltinAppId('app_basic_chat'), true);
   assert.equal(isBuiltinAppId('app_create_app'), true);
   assert.equal(isBuiltinAppId('app_video_cut'), true);
   assert.equal(isBuiltinAppId('github'), false);
@@ -56,11 +59,20 @@ try {
   assert.equal(emailApp?.templateSelectable, false);
   assert.equal(emailApp?.showInSidebarWhenEmpty, false);
 
+  const basicChatApp = await getApp(BASIC_CHAT_APP_ID);
+  assert.equal(basicChatApp?.id, BASIC_CHAT_APP_ID);
+  assert.equal(basicChatApp?.builtin, true);
+  assert.equal(basicChatApp?.templateSelectable, true);
+  assert.equal(basicChatApp?.shareEnabled, false);
+  assert.equal(basicChatApp?.shareToken, undefined);
+
   const createAppStarter = await getApp(CREATE_APP_APP_ID);
   assert.equal(createAppStarter?.id, CREATE_APP_APP_ID);
   assert.equal(createAppStarter?.builtin, true);
   assert.equal(createAppStarter?.templateSelectable, true);
   assert.equal(createAppStarter?.tool, 'codex');
+  assert.equal(createAppStarter?.shareEnabled, false);
+  assert.equal(createAppStarter?.shareToken, undefined);
   assert.match(createAppStarter?.welcomeMessage || '', /创建什么 App|app specification/i);
 
   const videoCutApp = await getApp(VIDEO_CUT_APP_ID);
@@ -68,6 +80,7 @@ try {
   assert.equal(videoCutApp?.builtin, true);
   assert.equal(videoCutApp?.templateSelectable, true);
   assert.equal(videoCutApp?.tool, 'codex');
+  assert.equal(videoCutApp?.shareEnabled, true);
   assert.match(videoCutApp?.welcomeMessage || '', /上传一段原始视频|uploaded source video/i);
   assert.equal((await getAppByShareToken(videoCutApp?.shareToken))?.id, VIDEO_CUT_APP_ID);
 

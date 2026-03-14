@@ -8,6 +8,7 @@ const BUILTIN_CREATED_AT = '1970-01-01T00:00:00.000Z';
 
 export const DEFAULT_APP_ID = 'chat';
 export const EMAIL_APP_ID = 'email';
+export const BASIC_CHAT_APP_ID = 'app_basic_chat';
 export const CREATE_APP_APP_ID = 'app_create_app';
 export const VIDEO_CUT_APP_ID = 'app_video_cut';
 export const BUILTIN_APPS = Object.freeze([
@@ -27,12 +28,23 @@ export const BUILTIN_APPS = Object.freeze([
     createdAt: BUILTIN_CREATED_AT,
   }),
   Object.freeze({
+    id: BASIC_CHAT_APP_ID,
+    name: 'Basic Chat',
+    builtin: true,
+    templateSelectable: true,
+    shareEnabled: false,
+    tool: 'codex',
+    systemPrompt: '',
+    welcomeMessage: '',
+    createdAt: BUILTIN_CREATED_AT,
+  }),
+  Object.freeze({
     id: CREATE_APP_APP_ID,
     name: 'Create App',
     builtin: true,
     templateSelectable: true,
+    shareEnabled: false,
     tool: 'codex',
-    shareToken: 'share_builtin_create_app_6b2f4d06ad0b4b8cb3cb6255c7d35b95',
     systemPrompt: [
       'You are the Create App starter app inside RemoteLab.',
       'Help the user turn a rough idea into a concrete app specification with minimal back-and-forth.',
@@ -54,6 +66,7 @@ export const BUILTIN_APPS = Object.freeze([
     name: 'Video Cut',
     builtin: true,
     templateSelectable: true,
+    shareEnabled: true,
     tool: 'codex',
     shareToken: 'share_builtin_video_cut_84f1b7fa9de446c59994a1d4a57f1316',
     systemPrompt: [

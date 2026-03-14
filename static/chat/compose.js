@@ -365,6 +365,11 @@ function switchTab(tab, { syncState = true } = {}) {
   sessionListFooter.classList.toggle("hidden", !showingSessions);
   newAppBtn.classList.toggle("hidden", !showingSessions);
   newSessionBtn.classList.toggle("hidden", !showingSessions);
+  if (activeTab === "settings" && !visitorMode && typeof fetchAppsList === "function") {
+    void fetchAppsList().catch((error) => {
+      console.warn("[apps] Failed to refresh apps for settings:", error.message);
+    });
+  }
   if (syncState) {
     syncBrowserState();
   }

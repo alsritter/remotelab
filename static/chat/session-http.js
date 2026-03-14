@@ -377,6 +377,9 @@ async function fetchAppsList() {
   const data = await fetchJsonOrRedirect("/api/apps");
   availableApps = Array.isArray(data.apps) ? data.apps : [];
   refreshAppCatalog();
+  if (typeof renderSettingsAppsPanel === "function") {
+    renderSettingsAppsPanel();
+  }
   return availableApps;
 }
 
