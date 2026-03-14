@@ -54,9 +54,8 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --sidebar-width: 300px;
-  --sidebar-width-board: 520px;
+  --sidebar-width-expanded: min(80vw, calc(100vw - 240px));
   --sidebar-mobile-width: 320px;
-  --sidebar-mobile-width-board: min(92vw, 560px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -122,11 +121,6 @@ body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior-y: none;
-}
-
-body.board-tab-active {
-  --sidebar-width: var(--sidebar-width-board);
-  --sidebar-mobile-width: var(--sidebar-mobile-width-board);
 }
 
 .app-shell {
@@ -1559,6 +1553,10 @@ body.board-tab-active {
 @media (min-width: 768px) {
   :root {
     --chat-column-width: 70%;
+  }
+
+  body.board-tab-expanded {
+    --sidebar-width: var(--sidebar-width-expanded);
   }
 
   .header #menuBtn { display: none; }

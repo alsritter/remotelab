@@ -350,7 +350,28 @@ let activeTab = normalizeSidebarTab(
     "sessions",
 ); // "sessions" | "board" | "settings"
 
-function switchTab(tab, { syncState = true } = {}) {
+let boardSidebarExpanded = false;
+
+function canExpandBoardSidebar() {
+  return !visitorMode && isDesktop && activeTab === "board";
+}
+
+function setBoardSidebarExpanded(expanded) {
+  const nextExpanded = canExpandBoardSidebar() && expanded === true;
+  if (boardSidebarExpanded === nextExpanded) return;
+  boardSidebarExpanded = nextExpanded;
+  document.body.classList.toggle("board-tab-expanded", nextExpanded);
+}
+
+function syncBoardSidebarExpansion({ expandBoard = false } = {}) {
+  if (!canExpandBoardSidebar()) {
+    setBoardSidebarExpanded(false);
+    return;
+  }
+  setBoardSidebarExpanded(expandBoard);
+}
+
+function switchTab(tab, { syncState = true, expandBoard = false } = {}) {
   activeTab = normalizeSidebarTab(tab);
   const showingSessions = activeTab === "sessions";
   const showingBoard = activeTab === "board";
@@ -366,6 +387,7 @@ function switchTab(tab, { syncState = true } = {}) {
   boardPanel?.classList.toggle("visible", showingBoard);
   settingsPanel.classList.toggle("visible", activeTab === "settings");
   document.body.classList.toggle("board-tab-active", showingBoard);
+  syncBoardSidebarExpansion({ expandBoard: showingBoard && expandBoard });
   sessionListFooter.classList.toggle("hidden", activeTab === "settings");
   newAppBtn.classList.toggle("hidden", activeTab === "settings");
   newSessionBtn.classList.toggle("hidden", activeTab === "settings");
@@ -385,6 +407,21 @@ function switchTab(tab, { syncState = true } = {}) {
 }
 
 tabSessions.addEventListener("click", () => switchTab("sessions"));
-tabBoard?.addEventListener("click", () => switchTab("board"));
+tabBoard?.addEventListener("click", () => switchTab("board", { expandBoard: true }));
 tabSettings.addEventListener("click", () => switchTab("settings"));
+
+sidebarOverlay?.addEventListener("pointerenter", () => {
+  if (!canExpandBoardSidebar()) return;
+  setBoardSidebarExpanded(true);
+});
+
+sidebarOverlay?.addEventListener("pointerleave", () => {
+  if (!canExpandBoardSidebar()) return;
+  setBoardSidebarExpanded(false);
+});
+
+window.matchMedia?.("(min-width: 768px)")?.addEventListener?.("change", () => {
+  syncBoardSidebarExpansion({ expandBoard: false });
+});
+
 switchTab(activeTab, { syncState: false });

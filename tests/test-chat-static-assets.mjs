@@ -222,8 +222,8 @@ async function main() {
     assert.match(page.text, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
     assert.match(page.text, /--app-height:\s*100dvh/);
     assert.match(page.text, /--keyboard-inset-height:\s*0px/);
-    assert.match(page.text, /--sidebar-width-board:\s*520px/);
-    assert.match(page.text, /body\.board-tab-active\s*\{[\s\S]*?--sidebar-width:\s*var\(--sidebar-width-board\);/, 'board mode should widen the sidebar via CSS variables');
+    assert.match(page.text, /--sidebar-width-expanded:\s*min\(80vw, calc\(100vw - 240px\)\);/);
+    assert.match(page.text, /body\.board-tab-expanded\s*\{[\s\S]*?--sidebar-width:\s*var\(--sidebar-width-expanded\);/, 'desktop board hover mode should widen the sidebar via CSS variables');
     assert.match(page.text, /\.app-shell\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'app shell should reserve a fixed header row and a flexible body row');
     assert.match(page.text, /\.app-container\s*\{[\s\S]*?min-height:\s*0;/);
     assert.match(page.text, /\.chat-area\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) auto auto;[\s\S]*?min-height:\s*0;/, 'chat area should model content, queued panel, and composer as explicit rows');
