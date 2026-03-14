@@ -382,7 +382,8 @@ async function fetchAppsList() {
 
 async function fetchSessionsList() {
   if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect("/api/sessions");
+  const query = activeUserFilter === USER_FILTER_ALL_VALUE ? "?includeVisitor=1" : "";
+  const data = await fetchJsonOrRedirect(`/api/sessions${query}`);
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   sessions = (data.sessions || []).map((session) => normalizeSessionRecord(session, previousMap.get(session.id) || null));
   hasLoadedSessions = true;
@@ -574,7 +575,7 @@ async function refreshRealtimeViews() {
   }
 }
 
-async function bootstrapViaHttp() {
+async function bootstrapViaHttp({ deferOwnerRestore = false } = {}) {
   if (visitorMode && visitorSessionId) {
     currentSessionId = visitorSessionId;
     attachSession(visitorSessionId, { id: visitorSessionId, name: "Session", status: "idle" });
@@ -582,7 +583,9 @@ async function bootstrapViaHttp() {
     return;
   }
   await fetchSessionsList();
-  restoreOwnerSessionSelection();
+  if (!deferOwnerRestore) {
+    restoreOwnerSessionSelection();
+  }
 }
 
 async function setupPushNotifications() {

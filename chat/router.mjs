@@ -47,7 +47,7 @@ import {
   deleteApp,
   isBuiltinAppId,
 } from './apps.mjs';
-import { createShareSnapshot, getShareSnapshot } from './shares.mjs';
+import { createShareSnapshot, getShareAsset, getShareSnapshot } from './shares.mjs';
 import { parseSessionGetRoute } from './session-route-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
@@ -283,6 +283,7 @@ function renderPageTemplate(template, nonce, replacements = {}) {
     BUILD_LABEL: BUILD_INFO.label,
     BUILD_TITLE: BUILD_INFO.title,
     BUILD_JSON: serializeJsonForScript(BUILD_INFO),
+    BOOTSTRAP_JSON: serializeJsonForScript({ auth: null }),
     ...replacements,
   };
   return Object.entries(merged).reduce(
@@ -297,6 +298,23 @@ function buildTemplateReplacements(buildInfo) {
     BUILD_LABEL: buildInfo.label,
     BUILD_TITLE: buildInfo.title,
     BUILD_JSON: serializeJsonForScript(buildInfo),
+  };
+}
+
+function buildAuthInfo(authSession) {
+  if (!authSession) return null;
+  const info = { role: authSession.role === 'visitor' ? 'visitor' : 'owner' };
+  if (info.role === 'visitor') {
+    info.appId = authSession.appId;
+    info.sessionId = authSession.sessionId;
+    info.visitorId = authSession.visitorId;
+  }
+  return info;
+}
+
+function buildChatPageBootstrap(authSession) {
+  return {
+    auth: buildAuthInfo(authSession),
   };
 }
 
@@ -545,6 +563,7 @@ function writeFileCached(req, res, contentType, body, {
 }
 
 const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, max-age=1296000, immutable';
+const SHARE_RESOURCE_CACHE_CONTROL = 'public, no-cache, max-age=0, must-revalidate';
 
 function canAccessSession(authSession, sessionId) {
   if (!authSession) return false;
@@ -562,7 +581,7 @@ async function isDirectoryPath(path) {
   return (await statOrNull(path))?.isDirectory() === true;
 }
 
-function setShareSnapshotHeaders(res, nonce) {
+function setShareSnapshotHeaders(res) {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
@@ -573,31 +592,34 @@ function setShareSnapshotHeaders(res, nonce) {
     "form-action 'none'",
     "frame-ancestors 'none'",
     "connect-src 'none'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    "script-src 'self'",
     "style-src 'unsafe-inline'",
     "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
     "font-src 'none'",
   ].join('; '));
 }
 
-async function writeSnapshotPage(res, nonce, snapshot, {
+async function writeSnapshotPage(req, res, shareId, {
   cacheControl,
   headers = {},
   failureText = 'Failed to load snapshot page',
 } = {}) {
-  setShareSnapshotHeaders(res, nonce);
+  setShareSnapshotHeaders(res);
   try {
     const pageBuildInfo = await getPageBuildInfo();
     const sharePage = await readFile(shareTemplatePath, 'utf8');
-    res.writeHead(200, buildHeaders({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': cacheControl,
-      ...headers,
-    }));
-    res.end(renderPageTemplate(sharePage, nonce, {
+    const body = renderPageTemplate(sharePage, '', {
       ...buildTemplateReplacements(pageBuildInfo),
-      SNAPSHOT_JSON: serializeJsonForScript(snapshot),
-    }));
+      SHARE_PAYLOAD_URL: `/share-payload/${shareId}.js`,
+    });
+    writeCachedResponse(req, res, {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body,
+      cacheControl,
+      headers,
+    });
   } catch {
     res.writeHead(500, buildHeaders({ 'Content-Type': 'text/plain' }));
     res.end(failureText);
@@ -627,6 +649,17 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/apps') return true;
   if (pathname.startsWith('/api/apps/')) return true;
   return false;
+}
+
+function parseSharePayloadRoute(pathname) {
+  const match = /^\/share-payload\/(snap_[a-f0-9]{48})\.js$/.exec(pathname || '');
+  return match ? match[1] : null;
+}
+
+function parseShareAssetRoute(pathname) {
+  const match = /^\/share-asset\/(snap_[a-f0-9]{48})\/(asset_[a-f0-9]{24})$/.exec(pathname || '');
+  if (!match) return null;
+  return { shareId: match[1], assetId: match[2] };
 }
 
 export async function handleRequest(req, res) {
@@ -759,7 +792,14 @@ export async function handleRequest(req, res) {
       '~',
       app.tool || 'codex',
       app.name,
-      { appId: app.id, appName: app.name, visitorId, systemPrompt: app.systemPrompt }
+      {
+        appId: app.id,
+        appName: app.name,
+        sourceId: 'chat',
+        sourceName: 'Chat',
+        visitorId,
+        systemPrompt: app.systemPrompt,
+      }
     );
     // Inject welcome message as first assistant event so visitor sees it immediately
     if (app.welcomeMessage) {
@@ -782,16 +822,69 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  const sharePayloadId = parseSharePayloadRoute(pathname);
+  if (sharePayloadId && req.method === 'GET') {
+    const snapshot = await getShareSnapshot(sharePayloadId);
+    if (!snapshot) {
+      res.writeHead(404, buildHeaders({
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      }));
+      res.end('Shared snapshot not found');
+      return;
+    }
+    const body = `window.__REMOTELAB_SHARE__ = ${serializeJsonForScript(snapshot)};`;
+    writeCachedResponse(req, res, {
+      statusCode: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body,
+      cacheControl: SHARE_RESOURCE_CACHE_CONTROL,
+      headers: {
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      },
+    });
+    return;
+  }
+
+  const shareAssetRoute = parseShareAssetRoute(pathname);
+  if (shareAssetRoute && req.method === 'GET') {
+    const asset = await getShareAsset(shareAssetRoute.shareId, shareAssetRoute.assetId);
+    if (!asset) {
+      res.writeHead(404, buildHeaders({
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      }));
+      res.end('Shared asset not found');
+      return;
+    }
+    try {
+      const content = await readFile(asset.filepath);
+      writeFileCached(req, res, asset.mimeType, content, {
+        cacheControl: SHARE_RESOURCE_CACHE_CONTROL,
+      });
+    } catch {
+      res.writeHead(404, buildHeaders({
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      }));
+      res.end('Shared asset not found');
+    }
+    return;
+  }
+
   if (pathname.startsWith('/share/') && req.method === 'GET') {
     const shareId = pathname.slice('/share/'.length);
     const snapshot = await getShareSnapshot(shareId);
     if (!snapshot) {
-      res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
+      res.writeHead(404, buildHeaders({
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      }));
       res.end('Shared snapshot not found');
       return;
     }
-    await writeSnapshotPage(res, nonce, snapshot, {
-      cacheControl: 'public, max-age=31536000, immutable',
+    await writeSnapshotPage(req, res, shareId, {
+      cacheControl: SHARE_RESOURCE_CACHE_CONTROL,
       failureText: 'Failed to load share page',
     });
     return;
@@ -824,8 +917,12 @@ export async function handleRequest(req, res) {
   const sessionGetRoute = req.method === 'GET' ? parseSessionGetRoute(pathname) : null;
 
   if (sessionGetRoute?.kind === 'list') {
+    const includeVisitor = authSession?.role === 'owner'
+      && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
     const sessionList = await listSessions({
+      includeVisitor,
       appId: typeof parsedUrl.query.appId === 'string' ? parsedUrl.query.appId : '',
+      sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
     });
     const folderFilter = parsedUrl.query.folder;
     const filtered = folderFilter
@@ -1185,6 +1282,8 @@ export async function handleRequest(req, res) {
         name,
         appId,
         appName,
+        sourceId,
+        sourceName,
         group,
         description,
         systemPrompt,
@@ -1204,15 +1303,29 @@ export async function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'Folder does not exist' }));
         return;
       }
-      const session = await createSession(resolvedFolder, tool, name || '', {
+      let session = await createSession(resolvedFolder, tool, name || '', {
         appId: typeof appId === 'string' ? appId : '',
         appName: typeof appName === 'string' ? appName : '',
+        sourceId: typeof sourceId === 'string' ? sourceId : '',
+        sourceName: typeof sourceName === 'string' ? sourceName : '',
         group: group || '',
         description: description || '',
         systemPrompt: typeof systemPrompt === 'string' ? systemPrompt : '',
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       });
+
+      const requestedApp = typeof appId === 'string' && appId.trim()
+        ? await getApp(appId.trim())
+        : null;
+      if (requestedApp && !isBuiltinAppId(requestedApp.id) && Number(session?.messageCount || 0) === 0) {
+        session = await applyAppTemplateToSession(session.id, requestedApp.id) || session;
+        if (requestedApp.welcomeMessage) {
+          await appendEvent(session.id, messageEvent('assistant', requestedApp.welcomeMessage));
+          session = await getSession(session.id) || session;
+        }
+      }
+
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ session }));
     } catch {
@@ -1539,12 +1652,7 @@ export async function handleRequest(req, res) {
       res.end(JSON.stringify({ error: 'Not authenticated' }));
       return;
     }
-    const info = { role: authSession.role || 'owner' };
-    if (authSession.role === 'visitor') {
-      info.appId = authSession.appId;
-      info.sessionId = authSession.sessionId;
-      info.visitorId = authSession.visitorId;
-    }
+    const info = buildAuthInfo(authSession);
     const refreshedCookie = await refreshAuthSession(req);
     writeJsonCached(req, res, info, {
       headers: refreshedCookie ? { 'Set-Cookie': refreshedCookie } : undefined,
@@ -1555,9 +1663,13 @@ export async function handleRequest(req, res) {
   // Main page (chat UI) — read from disk each time for hot-reload
   if (pathname === '/') {
     try {
-      const pageBuildInfo = await getPageBuildInfo();
-      const chatPage = await readFile(chatTemplatePath, 'utf8');
-      const refreshedCookie = await refreshAuthSession(req);
+      const authSession = getAuthSession(req);
+      const pageBootstrap = buildChatPageBootstrap(authSession);
+      const [pageBuildInfo, chatPage, refreshedCookie] = await Promise.all([
+        getPageBuildInfo(),
+        readFile(chatTemplatePath, 'utf8'),
+        refreshAuthSession(req),
+      ]);
       res.writeHead(200, buildHeaders({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
@@ -1565,7 +1677,10 @@ export async function handleRequest(req, res) {
         'Expires': '0',
         ...(refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {}),
       }));
-      res.end(renderPageTemplate(chatPage, nonce, buildTemplateReplacements(pageBuildInfo)));
+      res.end(renderPageTemplate(chatPage, nonce, {
+        ...buildTemplateReplacements(pageBuildInfo),
+        BOOTSTRAP_JSON: serializeJsonForScript(pageBootstrap),
+      }));
     } catch {
       res.writeHead(500, buildHeaders({ 'Content-Type': 'text/plain' }));
       res.end('Failed to load chat page');

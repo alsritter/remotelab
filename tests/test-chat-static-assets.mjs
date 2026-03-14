@@ -10,6 +10,7 @@ import { spawn } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
+const visitorCookie = 'session_token=visitor-session';
 
 function randomPort() {
   return 43000 + Math.floor(Math.random() * 10000);
@@ -72,6 +73,13 @@ function setupTempHome() {
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
       'test-session': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner' },
+      'visitor-session': {
+        expiry: Date.now() + 60 * 60 * 1000,
+        role: 'visitor',
+        appId: 'shared-app',
+        sessionId: 'visitor-session-id',
+        visitorId: 'visitor-123',
+      },
     }, null, 2),
     'utf8',
   );
@@ -133,12 +141,21 @@ async function main() {
     assert.match(page.text, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
     assert.match(page.text, /<meta name="theme-color" content="#1e1e1e" media="\(prefers-color-scheme: dark\)">/);
     assert.match(page.text, /@media \(prefers-color-scheme: dark\)/);
+    assert.match(page.text, /window\.__REMOTELAB_BOOTSTRAP__ = \{"auth":\{"role":"owner"\}\};/);
     assert.match(page.text, /<script src="\/chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/session-http\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/tooling\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/realtime\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/compose\.js(?:\?v=[^"]*)?"/);
+
+    const visitorPage = await request(port, 'GET', '/', null, { Cookie: visitorCookie });
+    assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
+    assert.match(
+      visitorPage.text,
+      /window\.__REMOTELAB_BOOTSTRAP__ = \{"auth":\{"role":"visitor","appId":"shared-app","sessionId":"visitor-session-id","visitorId":"visitor-123"\}\};/,
+      'visitor page should inline auth bootstrap data from the server render',
+    );
     assert.match(page.text, /<script src="\/chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="tabSettings"/);
@@ -270,6 +287,8 @@ async function main() {
     assert.match(toolingAsset.text, /window\.visualViewport\?\.addEventListener\("resize", \(\) => requestLayoutPass\("visual-viewport-resize"\)\)/);
     assert.doesNotMatch(toolingAsset.text, /window\.visualViewport\?\.addEventListener\("scroll"/);
     assert.match(toolingAsset.text, /function focusComposer\(/);
+    assert.match(toolingAsset.text, /const modelResponseCache = new Map\(\);/);
+    assert.match(toolingAsset.text, /async function fetchModelResponse\(/);
 
     const uiAsset = await request(port, 'GET', '/chat/ui.js');
     assert.equal(uiAsset.status, 200, 'ui asset should load');
@@ -281,6 +300,12 @@ async function main() {
     assert.equal(composeAsset.status, 200, 'compose asset should load');
     assert.match(composeAsset.text, /focusComposer\(\{ force: true, preventScroll: true \}\)/);
     assert.match(composeAsset.text, /window\.RemoteLabLayout\?\.subscribe/);
+
+    const initAsset = await request(port, 'GET', '/chat/init.js');
+    assert.equal(initAsset.status, 200, 'init asset should load');
+    assert.match(initAsset.text, /typeof getBootstrapAuthInfo === "function"/);
+    assert.match(initAsset.text, /loadInlineTools\(\{ skipModelLoad: true \}\)/);
+    assert.match(initAsset.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
 
     const tokenLogin = await request(
       port,

@@ -278,6 +278,8 @@ body {
 .sidebar-filters {
   padding: 8px 8px 0;
   flex-shrink: 0;
+  display: grid;
+  gap: 8px;
 }
 .sidebar-filters.hidden { display: none; }
 .sidebar-filter-select {
@@ -1365,7 +1367,14 @@ body.visitor-mode .gesture-pill { display: none !important; }
       </div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="appFilterSelect" aria-label="Filter sessions by app">
+          <option value="__all__">All Sources</option>
+        </select>
+        <select class="sidebar-filter-select" id="sessionAppFilterSelect" aria-label="Filter sessions by app template">
           <option value="__all__">All Apps</option>
+        </select>
+        <select class="sidebar-filter-select" id="userFilterSelect" aria-label="Filter sessions by owner scope">
+          <option value="__own__">My Sessions</option>
+          <option value="__all_users__">All Users</option>
         </select>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
@@ -1511,6 +1520,7 @@ body.visitor-mode .gesture-pill { display: none !important; }
 </div>
 
 <script nonce="{{NONCE}}">window.__REMOTELAB_BUILD__ = {{BUILD_JSON}};</script>
+<script nonce="{{NONCE}}">window.__REMOTELAB_BOOTSTRAP__ = {{BOOTSTRAP_JSON}};</script>
 <script src="/marked.min.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/session-state-model.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/icons.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

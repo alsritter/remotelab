@@ -28,14 +28,27 @@ function applyVisitorMode() {
 // ---- Init ----
 initResponsiveLayout();
 
-async function initApp() {
+async function resolveInitialAuthInfo() {
+  const bootstrapAuthInfo =
+    typeof getBootstrapAuthInfo === "function"
+      ? getBootstrapAuthInfo()
+      : null;
+  if (bootstrapAuthInfo) {
+    return bootstrapAuthInfo;
+  }
   try {
-    const info = await fetchJsonOrRedirect("/api/auth/me");
-    if (info.role === "visitor" && info.sessionId) {
-      visitorSessionId = info.sessionId;
-      applyVisitorMode();
-    }
-  } catch {}
+    return await fetchJsonOrRedirect("/api/auth/me");
+  } catch {
+    return null;
+  }
+}
+
+async function initApp() {
+  const authInfo = await resolveInitialAuthInfo();
+  if (authInfo?.role === "visitor" && authInfo.sessionId) {
+    visitorSessionId = authInfo.sessionId;
+    applyVisitorMode();
+  }
 
   const url = new URL(window.location.href);
   if (url.searchParams.has("visitor")) {
@@ -46,13 +59,26 @@ async function initApp() {
   syncAddToolModal();
   syncForkButton();
   syncShareButton();
-  if (!visitorMode) {
-    await loadInlineTools();
-    await fetchAppsList();
-    initializePushNotifications();
+  if (visitorMode) {
+    await bootstrapViaHttp();
+    connect();
+    return;
   }
-  await bootstrapViaHttp();
+
+  initializePushNotifications();
+
+  const toolsPromise = loadInlineTools({ skipModelLoad: true });
+  const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
+  const appsPromise = fetchAppsList().catch((error) => {
+    console.warn("[apps] Failed to load apps:", error.message);
+    return [];
+  });
+
+  await Promise.all([toolsPromise, sessionsPromise]);
+  restoreOwnerSessionSelection();
   connect();
+  void loadModelsForCurrentTool();
+  void appsPromise;
 }
 
 initApp();
