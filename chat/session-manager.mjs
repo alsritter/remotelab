@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
-import { join } from 'path';
+import { extname, join } from 'path';
 import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
@@ -69,7 +69,29 @@ import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets }
 import { createApp, getApp, normalizeAppId, resolveEffectiveAppId } from './apps.mjs';
 import { ensureDir } from './fs-utils.mjs';
 
-const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
+const MIME_EXTENSIONS = {
+  'application/json': '.json',
+  'application/pdf': '.pdf',
+  'application/zip': '.zip',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/ogg': '.ogg',
+  'audio/wav': '.wav',
+  'image/gif': '.gif',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'text/markdown': '.md',
+  'text/plain': '.txt',
+  'video/mp4': '.mp4',
+  'video/ogg': '.ogv',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+  'video/x-m4v': '.m4v',
+};
+const EXTENSION_MIME_TYPES = Object.fromEntries(
+  Object.entries(MIME_EXTENSIONS).map(([mimeType, extension]) => [extension.slice(1), mimeType]),
+);
 const VISITOR_TURN_GUARDRAIL = [
   '<private>',
   'Share-link security notice for this turn:',
@@ -248,17 +270,53 @@ function getFollowUpQueueCount(meta) {
   return getFollowUpQueue(meta).length;
 }
 
-function sanitizeQueuedFollowUpImages(images) {
+function sanitizeOriginalAttachmentName(value) {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().replace(/\\/g, '/');
+  const basename = normalized.split('/').filter(Boolean).pop() || '';
+  return basename.replace(/\s+/g, ' ').slice(0, 255);
+}
+
+function resolveAttachmentMimeType(mimeType, originalName = '') {
+  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
+  if (normalizedMimeType) {
+    return normalizedMimeType;
+  }
+  const extension = extname(originalName || '').toLowerCase().replace(/^\./, '');
+  return EXTENSION_MIME_TYPES[extension] || 'application/octet-stream';
+}
+
+function resolveAttachmentExtension(mimeType, originalName = '') {
+  const resolvedMimeType = resolveAttachmentMimeType(mimeType, originalName);
+  if (MIME_EXTENSIONS[resolvedMimeType]) {
+    return MIME_EXTENSIONS[resolvedMimeType];
+  }
+  const originalExtension = extname(originalName || '').toLowerCase();
+  if (/^\.[a-z0-9]+$/.test(originalExtension)) {
+    return originalExtension;
+  }
+  return '.bin';
+}
+
+function getAttachmentDisplayName(attachment) {
+  const originalName = sanitizeOriginalAttachmentName(attachment?.originalName || '');
+  if (originalName) return originalName;
+  return typeof attachment?.filename === 'string' ? attachment.filename : '';
+}
+
+function sanitizeQueuedFollowUpAttachments(images) {
   return (images || [])
     .map((image) => {
       const filename = typeof image?.filename === 'string' ? image.filename.trim() : '';
       const savedPath = typeof image?.savedPath === 'string' ? image.savedPath.trim() : '';
-      const mimeType = typeof image?.mimeType === 'string' ? image.mimeType.trim() : '';
+      const originalName = sanitizeOriginalAttachmentName(image?.originalName || '');
+      const mimeType = resolveAttachmentMimeType(image?.mimeType, originalName || filename);
       if (!filename || !savedPath) return null;
       return {
         filename,
         savedPath,
-        mimeType: mimeType || 'image/png',
+        ...(originalName ? { originalName } : {}),
+        mimeType,
       };
     })
     .filter(Boolean);
@@ -280,6 +338,7 @@ function serializeQueuedFollowUp(entry) {
     queuedAt: typeof entry?.queuedAt === 'string' ? entry.queuedAt : '',
     images: (entry?.images || []).map((image) => ({
       filename: image.filename,
+      originalName: image.originalName,
       mimeType: image.mimeType,
     })),
   };
@@ -323,9 +382,9 @@ function formatQueuedFollowUpTextEntry(entry, index) {
       lines.push(text);
     }
   }
-  const imageNames = (entry?.images || []).map((image) => image?.filename || '').filter(Boolean);
-  if (imageNames.length > 0) {
-    lines.push(`[Attached images: ${imageNames.join(', ')}]`);
+  const attachmentNames = (entry?.images || []).map((image) => getAttachmentDisplayName(image)).filter(Boolean);
+  if (attachmentNames.length > 0) {
+    lines.push(`[Attached files: ${attachmentNames.join(', ')}]`);
   }
   return lines.join('\n');
 }
@@ -424,7 +483,7 @@ async function flushQueuedFollowUps(sessionId) {
       model: dispatchOptions.model,
       effort: dispatchOptions.effort,
       thinking: dispatchOptions.thinking,
-      preSavedImages: queue.flatMap((entry) => sanitizeQueuedFollowUpImages(entry.images)),
+      preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(entry.images)),
       recordedUserText: transcriptText,
       queueIfBusy: false,
     });
@@ -597,19 +656,25 @@ function observeDetachedRun(sessionId, runId) {
   }
 }
 
-async function saveImages(images) {
+async function saveAttachments(images) {
   if (!images || images.length === 0) return [];
   await ensureDir(CHAT_IMAGES_DIR);
   return Promise.all(images.map(async (img) => {
-    const ext = MIME_EXT[img.mimeType] || '.png';
+    const originalName = sanitizeOriginalAttachmentName(img?.originalName || img?.name || '');
+    const mimeType = resolveAttachmentMimeType(img?.mimeType, originalName);
+    const ext = resolveAttachmentExtension(mimeType, originalName);
     const filename = randomBytes(12).toString('hex') + ext;
     const filepath = join(CHAT_IMAGES_DIR, filename);
-    await writeFile(filepath, Buffer.from(img.data, 'base64'));
+    const fileBuffer = Buffer.isBuffer(img?.buffer)
+      ? img.buffer
+      : Buffer.from(typeof img?.data === 'string' ? img.data : '', 'base64');
+    await writeFile(filepath, fileBuffer);
     return {
       filename,
       savedPath: filepath,
-      mimeType: img.mimeType || 'image/png',
-      data: img.data,
+      ...(originalName ? { originalName } : {}),
+      mimeType,
+      ...(typeof img?.data === 'string' ? { data: img.data } : {}),
     };
   }));
 }
@@ -1106,18 +1171,18 @@ function clipCompactionEventText(value, maxChars = 4000) {
   return `${text.slice(0, headChars).trimEnd()}\n[... truncated by RemoteLab ...]\n${text.slice(-tailChars).trimStart()}`;
 }
 
-function formatCompactionImages(images) {
+function formatCompactionAttachments(images) {
   const refs = (images || [])
-    .map((img) => img?.filename || '')
+    .map((img) => getAttachmentDisplayName(img))
     .filter(Boolean);
   if (refs.length === 0) return '';
-  return `[Attached images: ${refs.join(', ')}]`;
+  return `[Attached files: ${refs.join(', ')}]`;
 }
 
 function formatCompactionMessage(evt) {
   const label = evt.role === 'user' ? 'User' : 'Assistant';
   const parts = [];
-  const imageLine = formatCompactionImages(evt.images);
+  const imageLine = formatCompactionAttachments(evt.images);
   if (imageLine) parts.push(imageLine);
   const content = clipCompactionEventText(evt.content);
   if (content) parts.push(content);
@@ -2473,9 +2538,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 
   if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
     const normalizedText = text.trim();
-    const queuedImages = options.preSavedImages?.length > 0
-      ? sanitizeQueuedFollowUpImages(options.preSavedImages)
-      : sanitizeQueuedFollowUpImages(await saveImages(images));
+    const queuedImages = options.preSavedAttachments?.length > 0
+      ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+      : sanitizeQueuedFollowUpAttachments(await saveAttachments(images));
     const queuedOptions = sanitizeQueuedFollowUpOptions(options);
     const queuedEntry = {
       requestId,
@@ -2513,10 +2578,14 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const recordedUserText = typeof options.recordedUserText === 'string' && options.recordedUserText.trim()
     ? options.recordedUserText.trim()
     : normalizedText;
-  const savedImages = options.preSavedImages?.length > 0
-    ? sanitizeQueuedFollowUpImages(options.preSavedImages)
-    : await saveImages(images);
-  const imageRefs = savedImages.map((img) => ({ filename: img.filename, mimeType: img.mimeType }));
+  const savedImages = options.preSavedAttachments?.length > 0
+    ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+    : await saveAttachments(images);
+  const imageRefs = savedImages.map((img) => ({
+    filename: img.filename,
+    ...(img.originalName ? { originalName: img.originalName } : {}),
+    mimeType: img.mimeType,
+  }));
   const isFirstRecordedUserMessage =
     options.recordUserMessage !== false
     && (snapshot.userMessageCount || 0) === 0;

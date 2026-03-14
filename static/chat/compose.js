@@ -10,7 +10,7 @@ function sendMessage(existingRequestId) {
 
   renderOptimisticMessage(text, queuedImages, Date.now());
 
-  const msg = { action: "send", text: text || "(image)" };
+  const msg = { action: "send", text: text || "(attachment)" };
   msg.requestId = requestId;
   if (!visitorMode) {
     if (selectedTool) msg.tool = selectedTool;
@@ -23,8 +23,10 @@ function sendMessage(existingRequestId) {
   }
   if (queuedImages.length > 0) {
     msg.images = queuedImages.map((img) => ({
-      data: img.data,
+      file: img.file,
+      originalName: img.originalName,
       mimeType: img.mimeType,
+      objectUrl: img.objectUrl,
     }));
   }
   msgInput.value = "";
@@ -314,10 +316,11 @@ function renderOptimisticMessage(text, images, timestamp = Date.now()) {
     const imgWrap = document.createElement("div");
     imgWrap.className = "msg-images";
     for (const img of images) {
-      const imgEl = document.createElement("img");
-      imgEl.src = `data:${img.mimeType};base64,${img.data}`;
-      imgEl.alt = "attached image";
-      imgWrap.appendChild(imgEl);
+      const attachmentNode = typeof createMessageAttachmentNode === "function"
+        ? createMessageAttachmentNode(img)
+        : null;
+      if (!attachmentNode) continue;
+      imgWrap.appendChild(attachmentNode);
     }
     bubble.appendChild(imgWrap);
   }

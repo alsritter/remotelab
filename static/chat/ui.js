@@ -32,6 +32,94 @@ function markLazyEventBodyNode(node, evt, { preview = "", renderMode = "text" } 
   return true;
 }
 
+function getAttachmentDisplayName(attachment) {
+  const originalName = typeof attachment?.originalName === "string"
+    ? attachment.originalName.trim()
+    : "";
+  if (originalName) return originalName;
+  const filename = typeof attachment?.filename === "string"
+    ? attachment.filename.trim()
+    : "";
+  return filename || "attachment";
+}
+
+function getAttachmentKind(attachment) {
+  const mimeType = typeof attachment?.mimeType === "string"
+    ? attachment.mimeType
+    : "";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("image/")) return "image";
+  return "file";
+}
+
+function getAttachmentSource(attachment) {
+  if (typeof attachment?.objectUrl === "string" && attachment.objectUrl) {
+    return attachment.objectUrl;
+  }
+  if (typeof attachment?.filename === "string" && attachment.filename) {
+    return `/api/media/${encodeURIComponent(attachment.filename)}`;
+  }
+  return "";
+}
+
+function createMessageAttachmentNode(attachment) {
+  const source = getAttachmentSource(attachment);
+  if (!source) return null;
+  const kind = getAttachmentKind(attachment);
+  const label = getAttachmentDisplayName(attachment);
+
+  if (kind === "image") {
+    const imgEl = document.createElement("img");
+    imgEl.src = source;
+    imgEl.alt = label;
+    imgEl.loading = "lazy";
+    imgEl.onclick = () => window.open(source, "_blank");
+    return imgEl;
+  }
+
+  if (kind === "video") {
+    const videoEl = document.createElement("video");
+    videoEl.src = source;
+    videoEl.controls = true;
+    videoEl.preload = "metadata";
+    videoEl.playsInline = true;
+    return videoEl;
+  }
+
+  const link = document.createElement("a");
+  link.href = source;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.className = "attachment-link";
+  link.textContent = label;
+  return link;
+}
+
+function createComposerAttachmentPreviewNode(attachment) {
+  const source = getAttachmentSource(attachment);
+  if (!source) return null;
+  const kind = getAttachmentKind(attachment);
+  if (kind === "image") {
+    const imgEl = document.createElement("img");
+    imgEl.src = source;
+    imgEl.alt = getAttachmentDisplayName(attachment);
+    return imgEl;
+  }
+  if (kind === "video") {
+    const videoEl = document.createElement("video");
+    videoEl.src = source;
+    videoEl.muted = true;
+    videoEl.preload = "metadata";
+    videoEl.playsInline = true;
+    return videoEl;
+  }
+
+  const fileEl = document.createElement("div");
+  fileEl.className = "attachment-file";
+  fileEl.textContent = getAttachmentDisplayName(attachment);
+  return fileEl;
+}
+
 // ---- Render functions ----
 function renderMessage(evt) {
   const role = evt.role || "assistant";
@@ -49,12 +137,9 @@ function renderMessage(evt) {
       const imgWrap = document.createElement("div");
       imgWrap.className = "msg-images";
       for (const img of evt.images) {
-        const imgEl = document.createElement("img");
-        imgEl.src = `/api/images/${img.filename}`;
-        imgEl.alt = "attached image";
-        imgEl.loading = "lazy";
-        imgEl.onclick = () => window.open(imgEl.src, "_blank");
-        imgWrap.appendChild(imgEl);
+        const attachmentNode = createMessageAttachmentNode(img);
+        if (!attachmentNode) continue;
+        imgWrap.appendChild(attachmentNode);
       }
       bubble.appendChild(imgWrap);
     }
@@ -372,12 +457,12 @@ function renderQueuedMessagePanel(session) {
 
     const text = document.createElement("div");
     text.className = "queued-item-text";
-    text.textContent = item.text || "(image)";
+    text.textContent = item.text || "(attachment)";
 
     row.appendChild(meta);
     row.appendChild(text);
 
-    const imageNames = (item.images || []).map((image) => image?.filename || "").filter(Boolean);
+    const imageNames = (item.images || []).map((image) => getAttachmentDisplayName(image)).filter(Boolean);
     if (imageNames.length > 0) {
       const imageLine = document.createElement("div");
       imageLine.className = "queued-item-images";
@@ -725,27 +810,19 @@ newSessionBtn.addEventListener("click", () => {
 });
 
 // ---- Image handling ----
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(",")[1];
-      resolve({
-        data: base64,
-        mimeType: file.type || "image/png",
-        objectUrl: URL.createObjectURL(file),
-      });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function buildPendingAttachment(file) {
+  return {
+    file,
+    originalName: typeof file?.name === "string" ? file.name : "",
+    mimeType: file.type || "application/octet-stream",
+    objectUrl: URL.createObjectURL(file),
+  };
 }
 
 async function addImageFiles(files) {
   for (const file of files) {
-    if (!file.type.startsWith("image/")) continue;
     if (pendingImages.length >= 4) break;
-    pendingImages.push(await fileToBase64(file));
+    pendingImages.push(buildPendingAttachment(file));
   }
   renderImagePreviews();
 }
@@ -765,20 +842,21 @@ function renderImagePreviews() {
   pendingImages.forEach((img, i) => {
     const item = document.createElement("div");
     item.className = "img-preview-item";
-    const imgEl = document.createElement("img");
-    imgEl.src = img.objectUrl;
+    const previewNode = createComposerAttachmentPreviewNode(img);
     const removeBtn = document.createElement("button");
     removeBtn.className = "remove-img";
     removeBtn.type = "button";
-    removeBtn.title = "Remove image";
-    removeBtn.setAttribute("aria-label", "Remove image");
+    removeBtn.title = "Remove attachment";
+    removeBtn.setAttribute("aria-label", "Remove attachment");
     removeBtn.innerHTML = renderUiIcon("close");
     removeBtn.onclick = () => {
       URL.revokeObjectURL(img.objectUrl);
       pendingImages.splice(i, 1);
       renderImagePreviews();
     };
-    item.appendChild(imgEl);
+    if (previewNode) {
+      item.appendChild(previewNode);
+    }
     item.appendChild(removeBtn);
     imgPreviewStrip.appendChild(item);
   });

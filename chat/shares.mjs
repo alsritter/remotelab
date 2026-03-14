@@ -18,7 +18,7 @@ function generateShareId() {
   return `snap_${randomBytes(24).toString('hex')}`;
 }
 
-async function readImageBase64(image) {
+async function readAttachmentBase64(image) {
   if (!image || typeof image !== 'object') return null;
   if (typeof image.data === 'string' && image.data) return image.data;
 
@@ -40,12 +40,13 @@ async function readImageBase64(image) {
   return null;
 }
 
-async function sanitizeImage(image) {
-  const data = await readImageBase64(image);
+async function sanitizeAttachment(image) {
+  const data = await readAttachmentBase64(image);
   if (!data) return null;
   return {
     filename: typeof image?.filename === 'string' ? image.filename : undefined,
-    mimeType: typeof image?.mimeType === 'string' && image.mimeType ? image.mimeType : 'image/png',
+    originalName: typeof image?.originalName === 'string' ? image.originalName : undefined,
+    mimeType: typeof image?.mimeType === 'string' && image.mimeType ? image.mimeType : 'application/octet-stream',
     data,
   };
 }
@@ -59,7 +60,7 @@ async function sanitizeMessageEvent(event) {
     content: typeof event.content === 'string' ? event.content : '',
   };
   if (Array.isArray(event.images) && event.images.length > 0) {
-    const images = (await Promise.all(event.images.map(sanitizeImage))).filter(Boolean);
+    const images = (await Promise.all(event.images.map(sanitizeAttachment))).filter(Boolean);
     if (images.length > 0) snapshot.images = images;
   }
   return snapshot;

@@ -101,6 +101,84 @@ const staticMimeTypesByExtension = {
 };
 
 const staticDirResolved = resolve(staticDir);
+const MESSAGE_SUBMISSION_MAX_BYTES = 256 * 1024 * 1024;
+const uploadedMediaMimeTypes = {
+  gif: 'image/gif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  json: 'application/json',
+  m4a: 'audio/mp4',
+  m4v: 'video/x-m4v',
+  md: 'text/markdown; charset=utf-8',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  ogg: 'audio/ogg',
+  ogv: 'video/ogg',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  txt: 'text/plain; charset=utf-8',
+  wav: 'audio/wav',
+  webm: 'video/webm',
+  webp: 'image/webp',
+  zip: 'application/zip',
+};
+
+function bodyTooLargeError() {
+  return Object.assign(new Error('Request body too large'), { code: 'BODY_TOO_LARGE' });
+}
+
+function getMultipartBodyLength(req) {
+  const rawLength = Array.isArray(req.headers['content-length'])
+    ? req.headers['content-length'][0]
+    : req.headers['content-length'];
+  const parsedLength = Number.parseInt(rawLength || '', 10);
+  return Number.isFinite(parsedLength) && parsedLength >= 0 ? parsedLength : null;
+}
+
+function parseFormString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function readSessionMessagePayload(req, pathname) {
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  if (!contentType.startsWith('multipart/form-data')) {
+    const body = await readBody(req, MESSAGE_SUBMISSION_MAX_BYTES);
+    return JSON.parse(body);
+  }
+
+  const contentLength = getMultipartBodyLength(req);
+  if (contentLength !== null && contentLength > MESSAGE_SUBMISSION_MAX_BYTES) {
+    throw bodyTooLargeError();
+  }
+
+  const formRequest = new Request(`http://127.0.0.1${pathname}`, {
+    method: req.method,
+    headers: req.headers,
+    body: req,
+    duplex: 'half',
+  });
+  const formData = await formRequest.formData();
+  const images = [];
+  for (const entry of formData.getAll('images')) {
+    if (!entry || typeof entry.arrayBuffer !== 'function') continue;
+    images.push({
+      buffer: Buffer.from(await entry.arrayBuffer()),
+      mimeType: typeof entry.type === 'string' ? entry.type : '',
+      originalName: typeof entry.name === 'string' ? entry.name : '',
+    });
+  }
+
+  return {
+    requestId: parseFormString(formData.get('requestId')),
+    text: parseFormString(formData.get('text')),
+    tool: parseFormString(formData.get('tool')),
+    model: parseFormString(formData.get('model')),
+    effort: parseFormString(formData.get('effort')),
+    thinking: parseFormString(formData.get('thinking')) === 'true',
+    images,
+  };
+}
 
 function getLatestMtimeMsSync(path) {
   let stat;
@@ -876,12 +954,14 @@ export async function handleRequest(req, res) {
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'messages') {
       if (!requireSessionAccess(res, authSession, sessionId)) return;
       let body;
-      try { body = await readBody(req, 15 * 1024 * 1024); } catch (err) {
+      try {
+        body = await readSessionMessagePayload(req, pathname);
+      } catch (err) {
         writeJson(res, err.code === 'BODY_TOO_LARGE' ? 413 : 400, { error: err.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request' });
         return;
       }
-      let payload;
-      try { payload = JSON.parse(body); } catch {
+      let payload = body;
+      if (!payload || typeof payload !== 'object') {
         writeJson(res, 400, { error: 'Invalid request body' });
         return;
       }
@@ -1304,11 +1384,12 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  // Serve uploaded images
-  if (pathname.startsWith('/api/images/') && req.method === 'GET') {
-    const filename = pathname.slice('/api/images/'.length);
+  // Serve uploaded media
+  if ((pathname.startsWith('/api/images/') || pathname.startsWith('/api/media/')) && req.method === 'GET') {
+    const prefix = pathname.startsWith('/api/media/') ? '/api/media/' : '/api/images/';
+    const filename = pathname.slice(prefix.length);
     // Sanitize: only allow alphanumeric, dash, underscore, dot
-    if (!/^[a-zA-Z0-9_-]+\.[a-z]+$/.test(filename)) {
+    if (!/^[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(filename)) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('Invalid filename');
       return;
@@ -1319,9 +1400,8 @@ export async function handleRequest(req, res) {
       res.end('Not found');
       return;
     }
-    const ext = filename.split('.').pop();
-    const mimeTypes = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
-    writeFileCached(req, res, mimeTypes[ext] || 'application/octet-stream', await readFile(filepath), {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    writeFileCached(req, res, uploadedMediaMimeTypes[ext] || 'application/octet-stream', await readFile(filepath), {
       cacheControl: 'public, max-age=31536000, immutable',
     });
     return;

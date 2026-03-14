@@ -165,6 +165,8 @@ async function main() {
     assert.ok(!page.text.includes('/chat.js?v='), 'chat page should not pin the chat frontend to a versioned URL');
     assert.match(page.text, /\/marked\.min\.js\?v=/, 'chat page should fingerprint marked.min.js alongside the split chat assets');
     assert.match(page.text, /\/manifest\.json\?v=/, 'chat page should fingerprint the manifest URL so installed PWAs refresh policy changes');
+    assert.match(page.text, /title="Attach media"/, 'chat page should advertise media uploads in the composer');
+    assert.match(page.text, /accept="image\/\*,video\/\*"/, 'chat page should allow both image and video selection');
 
     const manifest = await request(port, 'GET', '/manifest.json');
     assert.equal(manifest.status, 200, 'manifest should load');
@@ -273,6 +275,7 @@ async function main() {
     assert.equal(uiAsset.status, 200, 'ui asset should load');
     assert.match(uiAsset.text, /focusComposer\(\{ preventScroll: true \}\)/);
     assert.match(uiAsset.text, /requestLayoutPass\("composer-images"\)/);
+    assert.match(uiAsset.text, /\/api\/media\//, 'ui asset should load persisted media attachments from the media route');
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');
