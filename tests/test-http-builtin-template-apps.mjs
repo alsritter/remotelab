@@ -181,6 +181,23 @@ try {
     );
     assert.match(welcomeContent, /创建什么 App|app specification/i);
 
+    const videoCutOwnerSession = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      appId: 'app_video_cut',
+      sourceId: 'chat',
+      sourceName: 'Chat',
+    }, {
+      Cookie: ownerCookie,
+    });
+    assert.equal(videoCutOwnerSession.status, 201, 'owner should be able to create a session from the built-in Video Cut template');
+    assert.equal(videoCutOwnerSession.json?.session?.appId, 'app_video_cut');
+    assert.match(
+      videoCutOwnerSession.json?.session?.systemPrompt || '',
+      /Video Cut Review|video-cut workflow|~\/code\/video-cut/i,
+      'built-in Video Cut sessions should include explicit local workflow guidance',
+    );
+
     const appsResponse = await request(port, 'GET', '/api/apps', null, {
       Cookie: ownerCookie,
     });

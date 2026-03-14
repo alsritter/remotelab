@@ -81,7 +81,10 @@ try {
   assert.equal(videoCutApp?.templateSelectable, true);
   assert.equal(videoCutApp?.tool, 'codex');
   assert.equal(videoCutApp?.shareEnabled, true);
+  assert.match(videoCutApp?.systemPrompt || '', /Video Cut Review|video-cut workflow|~\/code\/video-cut/i);
+  assert.match(videoCutApp?.systemPrompt || '', /kept-content review|Never skip the kept-content review gate/i);
   assert.match(videoCutApp?.welcomeMessage || '', /上传一段原始视频|uploaded source video/i);
+  assert.match(videoCutApp?.welcomeMessage || '', /Video Cut Review|video-cut 工作流/i);
   assert.equal((await getAppByShareToken(videoCutApp?.shareToken))?.id, VIDEO_CUT_APP_ID);
 
   assert.equal(await getApp('feishu'), null);
