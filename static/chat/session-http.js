@@ -234,17 +234,18 @@ async function fetchJsonOrRedirect(url, options = {}) {
   const requestOptions = { ...options };
   const revalidate = requestOptions.revalidate !== false;
   delete requestOptions.revalidate;
+  const requestUrl = withVisitorModeUrl(url);
 
   const method = String(requestOptions.method || "GET").toUpperCase();
   const isGet = method === "GET";
-  const cacheKey = isGet && revalidate ? buildJsonCacheKey(url) : null;
+  const cacheKey = isGet && revalidate ? buildJsonCacheKey(requestUrl) : null;
   const cached = cacheKey ? jsonResponseCache.get(cacheKey) : null;
   const headers = new Headers(requestOptions.headers || {});
   if (cached?.etag) {
     headers.set("If-None-Match", cached.etag);
   }
 
-  const res = await fetch(url, {
+  const res = await fetch(requestUrl, {
     ...requestOptions,
     method,
     headers,

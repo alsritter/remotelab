@@ -5,7 +5,7 @@ function renderRealtimeIcon(name, className = "") {
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws = new WebSocket(`${proto}//${location.host}${withVisitorModeUrl("/ws")}`);
 
   ws.onopen = () => {
     updateStatus("connected", getCurrentSession());
