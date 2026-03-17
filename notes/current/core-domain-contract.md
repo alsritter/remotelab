@@ -241,13 +241,23 @@ This preserves a clean answer to three different questions:
 The following are important product surfaces, but they are not the core domain:
 
 - sidebar grouping
+- board columns / workflow lanes
+- board attention priority
 - progress summaries
+- task-like labels that do not have an independent lifecycle
 - “needs your decision” indicators
 - list filters
 - archive tabs
 - folder/cwd display labels
 
 They should be derived from canonical objects, not treated as new objects with independent authority.
+
+For the current workflow-organization baseline, also read `session-first-workflow-surfaces.md`.
+The short version is:
+
+- `Session` is the only durable work object today
+- `group`, `workflowState`, and `workflowPriority` are session metadata
+- board/list/progress-style organization is a projection over sessions, not a parallel task system
 
 Two practical consequences:
 

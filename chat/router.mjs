@@ -114,24 +114,24 @@ const frontendBuildWatchers = [];
 let frontendBuildInvalidationTimer = null;
 
 async function listSessionsForClient(options = {}) {
-  const sessions = await listSessions({ ...options, includeBoardData: false });
-  return sessions.map(stripBoardDataFromSession);
+  const sessions = await listSessions(options);
+  return sessions.map(createClientSessionDetail);
 }
 
 async function listSessionListItemsForClient(options = {}) {
-  const sessions = await listSessions({ ...options, includeBoardData: false });
+  const sessions = await listSessions(options);
   return sessions.map(createSessionListItem);
 }
 
 async function getSessionForClient(id, options = {}) {
-  return stripBoardDataFromSession(await getSession(id, { ...options, includeBoardData: false }));
+  return createClientSessionDetail(await getSession(id, options));
 }
 
 async function getSessionListItemForClient(id, options = {}) {
-  return createSessionListItem(await getSession(id, { ...options, includeBoardData: false }));
+  return createSessionListItem(await getSession(id, options));
 }
 
-function stripBoardDataFromSession(session) {
+function createClientSessionDetail(session) {
   return createSessionDetail(session);
 }
 
@@ -1367,7 +1367,7 @@ export async function handleRequest(req, res) {
       writeJson(res, 404, { error: 'Session not found' });
       return;
     }
-    writeJson(res, 200, { session: stripBoardDataFromSession(session) });
+    writeJson(res, 200, { session: createClientSessionDetail(session) });
     return;
   }
 
@@ -1412,7 +1412,7 @@ export async function handleRequest(req, res) {
           duplicate: outcome.duplicate,
           queued: outcome.queued,
           run: outcome.run,
-          session: stripBoardDataFromSession(outcome.session),
+          session: createClientSessionDetail(outcome.session),
         });
       } catch (error) {
         const statusCode = error?.code === 'SESSION_ARCHIVED' ? 409 : 400;
@@ -1502,7 +1502,7 @@ export async function handleRequest(req, res) {
         writeJson(res, 409, { error: 'Unable to apply template' });
         return;
       }
-      writeJson(res, 200, { session: stripBoardDataFromSession(updated) });
+      writeJson(res, 200, { session: createClientSessionDetail(updated) });
       return;
     }
 
@@ -1562,7 +1562,7 @@ export async function handleRequest(req, res) {
         writeJson(res, 409, { error: 'Unable to fork session' });
         return;
       }
-      writeJson(res, 201, { session: stripBoardDataFromSession(session) });
+      writeJson(res, 201, { session: createClientSessionDetail(session) });
       return;
     }
 
@@ -1603,7 +1603,7 @@ export async function handleRequest(req, res) {
           return;
         }
         writeJson(res, 201, {
-          session: stripBoardDataFromSession(outcome.session),
+          session: createClientSessionDetail(outcome.session),
           run: outcome.run || null,
         });
       } catch (error) {
@@ -1730,7 +1730,7 @@ export async function handleRequest(req, res) {
       }
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ session: stripBoardDataFromSession(session) }));
+      res.end(JSON.stringify({ session: createClientSessionDetail(session) }));
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));
@@ -2107,7 +2107,7 @@ export async function handleRequest(req, res) {
           tool: typeof payload.tool === 'string' ? payload.tool.trim() : '',
         });
       res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ user, session: stripBoardDataFromSession(session) }));
+      res.end(JSON.stringify({ user, session: createClientSessionDetail(session) }));
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));

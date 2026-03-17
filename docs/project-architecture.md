@@ -355,18 +355,22 @@ Represents an immutable, read-only capture of a session’s sanitized history.
 
 It is intentionally separate from the live session.
 
-### 6.7 Sidebar summary state
+### 6.7 Session workflow projection
 
-Represents lightweight progress cards used by the “progress” tab.
+Represents owner-facing session organization views such as the sidebar and board.
+
+It is not a separate durable object. It is derived from canonical session metadata plus live activity.
 
 Key fields per session include:
 
-- `background`
-- `lastAction`
 - `name`
 - `group`
 - `description`
+- `workflowState`
+- `workflowPriority`
+- `pinned`
 - `updatedAt`
+- live `activity`
 
 ---
 
@@ -598,7 +602,7 @@ That call generates JSON describing canonical presentation metadata:
 - maybe `description`
 
 The result is written back into canonical session metadata.
-The current `Progress` tab is intentionally just an empty shell kept for future surfaces; long-term task-progress management should piggyback on session-list grouping instead of a separate summary board.
+The current board is intentionally session-first: workflow organization piggybacks on canonical session metadata plus live activity instead of a separate task-board object.
 
 ### 9.5 Context compaction and “drop tools”
 
@@ -673,7 +677,7 @@ The main chat frontend (`static/chat/`, loaded by `static/chat.js`) is responsib
 - managing pending-message recovery on refresh
 - managing inline tool/model/reasoning selectors
 - handling session archive/rename actions
-- managing progress-tab reads
+- rendering the session-first board / workflow projection
 - registering push notifications
 
 ### 10.4 Share page frontend

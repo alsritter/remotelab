@@ -15,7 +15,8 @@ Read these first when you need the current truth:
 2. `../README.md` / `../README.zh.md` — product framing, setup path, operator-facing expectations
 3. `project-architecture.md` — current shipped architecture and code map
 4. `../notes/current/core-domain-contract.md` — current domain/refactor baseline
-5. `setup.md` / `external-message-protocol.md` / other focused guides as needed
+5. `../notes/current/session-first-workflow-surfaces.md` — current workflow-organization contract for board/list/group/task-like views
+6. `setup.md` / `external-message-protocol.md` / other focused guides as needed
 
 ## Keep These In Sync
 
@@ -47,6 +48,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state
 - `external-message-protocol.md` — canonical integration contract for external channels
 - `creating-apps.md` — user/developer guide for Apps
+- `../notes/current/session-first-workflow-surfaces.md` — current rule that board/list/group/task-like workflow views stay session-first
 
 ### Focused Integrations
 
