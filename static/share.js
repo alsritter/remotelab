@@ -411,8 +411,12 @@
   function renderReasoning(event) {
     const container = getThinkingBody();
     const div = document.createElement("div");
-    div.className = "reasoning";
-    div.textContent = event.content || "";
+    div.className = "reasoning msg-assistant";
+    const rendered = marked.parse(event.content || "");
+    if (!rendered.trim()) return;
+    div.innerHTML = rendered;
+    sanitizeRenderedContent(div);
+    enhanceCodeBlocks(div);
     container.appendChild(div);
   }
 

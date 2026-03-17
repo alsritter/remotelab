@@ -299,12 +299,22 @@ function renderFileChangeInto(container, evt) {
 function renderReasoningInto(container, evt) {
   if (!container) return null;
   const div = document.createElement("div");
-  div.className = "reasoning";
-  div.textContent = evt.content || "";
-  if (evt.bodyAvailable && !evt.bodyLoaded) {
-    div.dataset.eventSeq = String(evt.seq || "");
-    div.dataset.bodyPending = "true";
-    div.dataset.preview = evt.content || "";
+  div.className = "reasoning md-content";
+  if (evt.content) {
+    const didRender = renderMarkdownIntoNode(div, evt.content);
+    if (!didRender && !evt.bodyAvailable) return null;
+  } else if (evt.bodyAvailable && evt.bodyPreview) {
+    renderMarkdownIntoNode(div, evt.bodyPreview);
+  } else if (!evt.bodyAvailable) {
+    return null;
+  }
+  if (markLazyEventBodyNode(div, evt, {
+    preview: evt.bodyPreview || evt.content || "",
+    renderMode: "markdown",
+  })) {
+    if (typeof queueHydrateLazyNodes === "function") {
+      queueHydrateLazyNodes(div);
+    }
   }
   container.appendChild(div);
   return div;
