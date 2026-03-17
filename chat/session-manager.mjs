@@ -164,6 +164,7 @@ const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
 const DEFAULT_AUTO_COMPACT_CONTEXT_WINDOW_PERCENT = 100;
 const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
 const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
+const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 
 function parsePositiveIntOrInfinity(value) {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -747,6 +748,9 @@ function stopObservedRun(runId) {
   if (observed.timer) {
     clearTimeout(observed.timer);
   }
+  if (observed.poller) {
+    clearInterval(observed.poller);
+  }
   try {
     observed.watcher?.close();
   } catch {}
@@ -800,7 +804,13 @@ function observeDetachedRun(sessionId, runId) {
       console.error(`[runs] observer error for ${runId}: ${error.message}`);
       stopObservedRun(runId);
     });
-    observedRuns.set(runId, { sessionId, watcher, timer: null });
+    const poller = setInterval(() => {
+      scheduleObservedRunSync(runId, 0);
+    }, OBSERVED_RUN_POLL_INTERVAL_MS);
+    if (typeof poller.unref === 'function') {
+      poller.unref();
+    }
+    observedRuns.set(runId, { sessionId, watcher, timer: null, poller });
     scheduleObservedRunSync(runId, 0);
     return true;
   } catch (error) {
