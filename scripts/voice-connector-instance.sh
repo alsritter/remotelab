@@ -36,11 +36,7 @@ running_pid() {
 resolved_start_mode() {
   case "$START_MODE" in
     auto)
-      if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
-        printf '%s\n' 'terminal'
-      else
-        printf '%s\n' 'nohup'
-      fi
+      printf '%s\n' 'nohup'
       ;;
     terminal|nohup)
       printf '%s\n' "$START_MODE"

@@ -20,8 +20,7 @@ I want you to wire a wake-word voice connector for RemoteLab on this machine.
 
 Target behavior:
 - a local microphone listens for a wake phrase
-- after wake, capture one utterance
-- transcribe it
+- transcribe wake audio locally
 - send it into RemoteLab as one user message
 - wait for the assistant reply
 - speak the reply back through the local speaker
@@ -35,8 +34,8 @@ Machine / hardware:
 
 Pipeline choices:
 - wake-word layer: <openWakeWord / Porcupine / custom / already have one>
-- capture layer: <ffmpeg / sox / custom>
-- STT layer: <whisper.cpp / faster-whisper / cloud API / custom>
+- audio capture layer: <ffmpeg / sox / custom>
+- STT layer: <mlx_whisper / whisper.cpp / faster-whisper / cloud API / custom>
 - TTS layer: <macOS say / espeak / Piper / cloud API / custom>
 
 RemoteLab session choices:
@@ -66,7 +65,7 @@ When the setup is complete, the machine should have:
 
 - one local `voice-connector` process
 - one wake pipeline that emits activations
-- one capture/transcribe pipeline for each wake event
+- one local audio/transcribe pipeline, either direct wake-to-transcript or wake + capture + STT
 - one durable RemoteLab session per connector/device
 - one TTS path back to the speaker
 
@@ -154,45 +153,52 @@ For a custom command, the reply is passed both as stdin and as `REMOTELAB_VOICE_
 
 ```json
 {
-  "connectorId": "living-room-speaker",
-  "roomName": "Living Room",
+  "connectorId": "desk-speaker",
+  "roomName": "Desk",
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionFolder": "~",
   "sessionTool": "codex",
-  "model": "",
-  "effort": "",
+  "sessionMode": "per-wake",
   "thinking": false,
+  "systemPrompt": "You are validating a local wake-word connector. Reply in the user's language with one short sentence that repeats the recognized transcript. Do not take external actions.",
   "wake": {
     "mode": "command",
-    "command": "python3 ~/bin/voice-wake-loop.py",
-    "keyword": "Hey Rowan"
-  },
-  "capture": {
-    "command": "python3 ~/bin/voice-capture.py",
-    "timeoutMs": 90000
-  },
-  "stt": {
-    "command": "python3 ~/bin/voice-transcribe.py",
-    "timeoutMs": 120000
+    "command": "~/.tmp/asr-venv/bin/python /Users/jiujianian/code/remotelab/scripts/voice-wake-loop.py --phrase \"Hello World\" --transcript-mode full --model mlx-community/whisper-large-v3-turbo-q4 --language en --chunk-seconds 1.8 --cooldown-ms 2500 --ack-sound-path \"/System/Library/Sounds/Glass.aiff\"",
+    "keyword": "Hello World"
   },
   "tts": {
-    "mode": "say",
-    "voice": "Tingting",
-    "rate": 185
+    "enabled": false
   }
 }
 ```
 
-## Built-in macOS demo helpers
+This one-stage setup is the simplest validation path:
 
-This repo now ships a simple macOS-first demo path that keeps all microphone / wake-word handling outside the main server:
+- `ffmpeg` reads the microphone
+- `mlx_whisper` transcribes each short chunk locally
+- the wake loop emits a JSON event that already includes `transcript`
+- `scripts/voice-connector.mjs` sends that transcript straight into a new RemoteLab session
+
+`capture.command` and `stt.command` stay available for more advanced flows, but they are not required for the first hello-world demo.
+
+## Built-in helper scripts
+
+This repo now ships a generic `ffmpeg + mlx_whisper` path that keeps the core logic outside the main server and outside platform-specific app code:
+
+- `scripts/voice-wake-loop.py` — always-on wake listener using short microphone chunks plus local `mlx_whisper`
+- `scripts/voice-record-once.py` — one-shot microphone capture helper using `ffmpeg`
+- `scripts/voice-transcribe-mlx.py` — one-shot local transcription helper using `mlx_whisper`
+- `scripts/voice-connector-instance.sh` — start/stop/status helper for the persistent connector process
+
+## Optional macOS prototype helpers
+
+The older Swift-based prototype remains in the repo as an optional macOS-only branch for experiments, but it is no longer the recommended core path:
 
 - `scripts/voice-wake-phrase.swift` — always-on wake listener using macOS Speech; can optionally play a short acknowledgement sound before it emits the wake event
 - `scripts/voice-capture-until-silence.swift` — captures one follow-up utterance and stops after about 1 second of silence
-- `scripts/music-open.mjs` — opens a preset Apple Music classical target or a search page, then sends a play/pause key as a pragmatic playback trigger
-- `scripts/voice-connector-instance.sh` — start/stop/status helper for the persistent connector process
+- `scripts/music-open.mjs` — a separate local-action demo, not part of the core voice ingress path
 
-Example machine-local config for this demo shape:
+Example machine-local config for that macOS-only prototype shape:
 
 ```json
 {
@@ -228,7 +234,7 @@ Start the persistent demo instance with:
 ./scripts/voice-connector-instance.sh start
 ```
 
-On macOS, the instance helper may launch the connector through `Terminal.app` so the wake listener inherits the same microphone / speech-recognition permission context as an interactive terminal session.
+On macOS, the instance helper may launch the connector through `Terminal.app` when you explicitly choose that mode, but the generic `ffmpeg + mlx_whisper` path does not require Swift as the core runtime.
 
 For a direct wake-layer smoke test without speaking, run:
 
@@ -250,6 +256,12 @@ Then a local interactive pass:
 npm run voice:connect -- --config ~/.config/remotelab/voice-connector/config.json --stdin
 ```
 
+Then a wake-layer smoke test using a prerecorded file:
+
+```bash
+~/.tmp/asr-venv/bin/python /Users/jiujianian/code/remotelab/scripts/voice-wake-loop.py --phrase "Hello World" --transcript-mode full --model mlx-community/whisper-large-v3-turbo-q4 --language en --test-file /tmp/hello-world.wav
+```
+
 Then the real wake loop:
 
 ```bash
@@ -261,7 +273,7 @@ Expected outcome:
 - a `Voice` session is created or reused in RemoteLab
 - the spoken text appears as a normal user message in that session
 - the assistant reply is short and speech-friendly
-- the reply is spoken through the configured TTS path
+- if TTS is enabled, the reply is spoken through the configured TTS path
 
 ## Architecture Fit
 

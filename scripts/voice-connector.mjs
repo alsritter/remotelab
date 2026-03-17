@@ -206,8 +206,8 @@ Wake command contract:
   - JSON may include: eventId, wakeWord, transcript, audioPath, detectedAt, connectorId, roomName, metadata.
 
 Stage command contract:
-  - capture.command receives REMOTELAB_VOICE_* env vars and may output either a plain audio path or JSON with { audioPath, transcript }.
-  - stt.command receives REMOTELAB_VOICE_AUDIO_PATH and should output either plain transcript text or JSON with { text } / { transcript }.
+  - capture.command is optional. It receives REMOTELAB_VOICE_* env vars and may output either a plain audio path or JSON with { audioPath, transcript }.
+  - stt.command is optional. It receives REMOTELAB_VOICE_AUDIO_PATH and should output either plain transcript text or JSON with { text } / { transcript }.
   - tts.command receives REMOTELAB_VOICE_REPLY_TEXT and also gets the reply on stdin.
 
 Config shape:
@@ -224,16 +224,8 @@ Config shape:
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
     "wake": {
       "mode": "command",
-      "command": "python3 your-wake-loop.py",
-      "keyword": "Hey Rowan"
-    },
-    "capture": {
-      "command": "python3 capture-utterance.py",
-      "timeoutMs": ${DEFAULT_CAPTURE_TIMEOUT_MS}
-    },
-    "stt": {
-      "command": "python3 transcribe.py",
-      "timeoutMs": ${DEFAULT_STT_TIMEOUT_MS}
+      "command": "python3 your-wake-loop.py --phrase \"Hello World\" --transcript-mode full",
+      "keyword": "Hello World"
     },
     "tts": {
       "mode": "say",
