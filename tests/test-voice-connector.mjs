@@ -45,6 +45,37 @@ assert.match(loadedConfig.systemPrompt, /spoken aloud/i)
 assert.match(loadedConfig.systemPrompt, /conversational/i)
 assert.match(DEFAULT_SESSION_SYSTEM_PROMPT, /Match the user's language/i)
 
+await writeFile(tempConfigPath, `${JSON.stringify({
+  connectorId: 'living-room-speaker',
+  roomName: 'Living Room',
+  chatBaseUrl: 'http://127.0.0.1:7690',
+  sessionFolder: repoRoot,
+  systemPrompt: '',
+  wake: {
+    mode: 'stdin',
+    keyword: 'Hey Rowan',
+  },
+  tts: {
+    enabled: false,
+  },
+}, null, 2)}\n`, 'utf8')
+const explicitEmptyPromptConfig = await loadConfig(tempConfigPath)
+assert.equal(explicitEmptyPromptConfig.systemPrompt, '')
+
+await writeFile(tempConfigPath, `${JSON.stringify({
+  connectorId: 'living-room-speaker',
+  roomName: 'Living Room',
+  chatBaseUrl: 'http://127.0.0.1:7690',
+  sessionFolder: repoRoot,
+  wake: {
+    mode: 'stdin',
+    keyword: 'Hey Rowan',
+  },
+  tts: {
+    enabled: false,
+  },
+}, null, 2)}\n`, 'utf8')
+
 const jsonIngress = normalizeIngressEvent('{"eventId":"wake_1","wakeWord":"Hey Rowan","transcript":"今天天气怎么样？"}', {
   connectorId: 'desk-speaker',
   roomName: 'Office',

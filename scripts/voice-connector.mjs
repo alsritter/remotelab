@@ -141,6 +141,7 @@ function normalizeConfig(value, options = {}) {
   const description = trimString(normalized.description)
   const sessionMode = trimString(normalized.sessionMode).toLowerCase() === 'per-wake' ? 'per-wake' : DEFAULT_SESSION_MODE
   const queueMode = trimString(normalized.queueMode).toLowerCase() === 'ignore' ? 'ignore' : 'queue'
+  const hasCustomSystemPrompt = Object.prototype.hasOwnProperty.call(normalized, 'systemPrompt')
   return {
     configPath: resolvedConfigPath,
     storageDir,
@@ -152,7 +153,7 @@ function normalizeConfig(value, options = {}) {
     model: trimString(normalized.model),
     effort: trimString(normalized.effort),
     thinking: normalized.thinking === true,
-    systemPrompt: trimString(normalized.systemPrompt) || DEFAULT_SESSION_SYSTEM_PROMPT,
+    systemPrompt: hasCustomSystemPrompt ? trimString(normalized.systemPrompt) : DEFAULT_SESSION_SYSTEM_PROMPT,
     appId: trimString(normalized.appId || DEFAULT_APP_ID) || DEFAULT_APP_ID,
     appName: trimString(normalized.appName || DEFAULT_APP_NAME) || DEFAULT_APP_NAME,
     group: trimString(normalized.group || DEFAULT_GROUP_NAME) || DEFAULT_GROUP_NAME,
