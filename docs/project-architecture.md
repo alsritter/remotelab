@@ -904,6 +904,7 @@ This repo already contains several design notes that point beyond the current co
 - app-centric architecture where default chat becomes a built-in App/policy model
 - richer autonomy / deferred triggers / background execution
 - deeper external channel unification (mail, repo bots, other message sources)
+- single-source active-run transcript projection with side-effect-free read paths
 - potentially broader runtime/provider cleanup after the current HTTP-first boundaries settle
 - broader theming beyond the current automatic system light/dark baseline
 - further icon-system cleanup beyond the current shipped Codicons subset
@@ -916,6 +917,7 @@ Use these notes when needed:
 - `notes/directional/app-centric-architecture.md`
 - `notes/directional/ai-driven-interaction.md`
 - `notes/directional/autonomous-execution.md`
+- `notes/directional/single-source-transcript-architecture.md`
 - `notes/directional/ui-theming.md`
 - `notes/directional/ui-icons.md`
 - `notes/current/self-hosting-dev-restarts.md`
