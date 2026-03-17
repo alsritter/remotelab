@@ -165,12 +165,13 @@ body {
 .header-share-btn:disabled { opacity: 0.7; cursor: wait; }
 .header-refresh-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  height: 28px; padding: 0 10px; border-radius: 999px;
+  width: 28px; height: 28px; padding: 0; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg-secondary);
-  color: var(--text-muted); font-size: 11px; font-weight: 600;
+  color: var(--text-muted);
   cursor: pointer; flex-shrink: 0;
   transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
 }
+.header-refresh-btn .rl-icon { width: 14px; height: 14px; }
 .header-refresh-btn:hover {
   background: var(--bg-tertiary);
   color: var(--text);
@@ -1879,7 +1880,7 @@ body.share-snapshot-mode .input-row textarea:disabled {
   <h1 id="headerTitle">RemoteLab Chat</h1>
   <button class="header-share-btn" id="forkSessionBtn" title="Create an isolated copy of this session" style="display:none">Fork</button>
   <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none">Share</button>
-  <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" hidden>Update</button>
+  <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-icon="refresh" hidden></button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText">disconnected</span>
 </div>
