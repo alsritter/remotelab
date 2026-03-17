@@ -177,6 +177,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If an external connector should reuse the operator's current tool/model/reasoning choice, the browser must sync that selection to server-readable state; backend workers cannot see `localStorage`.
 - Treat the synced selection as the live runtime preference for connector-triggered sessions, and let connector-specific pinned overrides win only when they are explicitly configured.
 
+### Composer Drafts Must Exclude In-Flight Sends (2026-03-17)
+- Durable draft storage should represent only editable local composer text, not an outbound request that is already being sent.
+- When a send starts, clear the persisted draft immediately and keep the temporary "sending" copy only in memory for the active page.
+- Otherwise a reload can resurrect text that the server already accepted, making the composer look stuck in a duplicate sending state.
+
 ### Connector App Scopes Should Be Real Apps, Not Chat Aliases (2026-03-12)
 - If an integration like Email creates sessions with its own `appId`, ship a real built-in app entry for that scope so the UI can present it consistently instead of feeling like an unnamed Chat fallback.
 - Mark connector built-ins as non-template apps, and hide them from the sidebar when they have zero sessions; otherwise they clutter owner-facing app/template controls while still failing to model the connector cleanly.

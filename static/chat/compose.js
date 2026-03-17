@@ -65,6 +65,35 @@ function reconcileComposerPendingSendWithEvent(event) {
   return finalizeComposerPendingSend(event.requestId);
 }
 
+function getDraftStorageKey(sessionId = currentSessionId) {
+  if (!sessionId) return "";
+  return `draft_${sessionId}`;
+}
+
+function readStoredDraft(sessionId = currentSessionId) {
+  const key = getDraftStorageKey(sessionId);
+  if (!key) return "";
+  return localStorage.getItem(key) || "";
+}
+
+function writeStoredDraft(sessionId = currentSessionId, text = "") {
+  const key = getDraftStorageKey(sessionId);
+  if (!key) return;
+  if (text) {
+    localStorage.setItem(key, text);
+    return;
+  }
+  localStorage.removeItem(key);
+}
+
+function getComposerDraftText(sessionId = currentSessionId) {
+  if (!sessionId) return "";
+  if (isComposerPendingForSession(sessionId)) {
+    return pendingComposerSend?.text || "";
+  }
+  return readStoredDraft(sessionId);
+}
+
 function sendMessage(existingRequestId) {
   const text = msgInput.value.trim();
   const currentSession = getCurrentSession();
@@ -81,6 +110,7 @@ function sendMessage(existingRequestId) {
     text,
     images: queuedImages,
   };
+  clearDraft(sessionId);
   syncComposerPendingUi();
   autoResizeInput();
 
@@ -305,24 +335,16 @@ if (window.RemoteLabLayout?.subscribe) {
 
 // ---- Draft persistence ----
 function saveDraft() {
-  if (!currentSessionId) return;
-  if (msgInput.value) {
-    localStorage.setItem(`draft_${currentSessionId}`, msgInput.value);
-    return;
-  }
-  localStorage.removeItem(`draft_${currentSessionId}`);
+  if (!currentSessionId || isComposerPendingForCurrentSession()) return;
+  writeStoredDraft(currentSessionId, msgInput.value);
 }
 function restoreDraft() {
-  const draft = currentSessionId
-    ? localStorage.getItem(`draft_${currentSessionId}`)
-    : "";
-  msgInput.value = draft ?? "";
+  msgInput.value = getComposerDraftText(currentSessionId);
   autoResizeInput();
   syncComposerPendingUi();
 }
 function clearDraft(sessionId = currentSessionId) {
-  if (!sessionId) return;
-  localStorage.removeItem(`draft_${sessionId}`);
+  writeStoredDraft(sessionId, "");
 }
 
 msgInput.addEventListener("input", () => {
@@ -344,6 +366,7 @@ function restoreFailedSendState(sessionId, text, images, requestId = "") {
   if (pendingComposerSend && (!requestId || pendingComposerSend.requestId === requestId)) {
     pendingComposerSend = null;
   }
+  writeStoredDraft(sessionId, text || "");
   syncComposerPendingUi();
   if (sessionId !== currentSessionId) {
     return;

@@ -327,8 +327,19 @@ assert.equal(canonicalSendCalls.length, 1, 'send should still dispatch exactly o
 assert.equal(canonicalSendContext.msgInput.value, 'hold the draft until confirmed', 'send should keep the composer text visible until canonical state confirms it');
 assert.equal(canonicalSendContext.msgInput.readOnly, true, 'composer should become read-only while the send is pending');
 assert.equal(canonicalSendContext.inputArea.classList.contains('is-pending-send'), true, 'pending sends should gray the composer instead of injecting an optimistic chat bubble');
-assert.equal(canonicalSendContext.localStorage.getItem('draft_session-a'), 'hold the draft until confirmed', 'pending sends should keep the draft stored until confirmed');
+assert.equal(canonicalSendContext.localStorage.getItem('draft_session-a'), null, 'pending sends should not leave a durable draft behind once the outbound request is in flight');
 assert.equal(canonicalSendContext.composerPendingState.classList.contains('visible'), true, 'pending sends should surface a lightweight sending indicator in the composer');
+canonicalSendContext.msgInput.value = '';
+canonicalSendContext.restoreDraft();
+assert.equal(canonicalSendContext.msgInput.value, 'hold the draft until confirmed', 'the active page should still rehydrate the pending send from memory while it is in flight');
+
+const reloadedPendingSendContext = createContext({
+  storageSeed: Object.fromEntries(canonicalSendContext.localStorage.store),
+});
+vm.runInNewContext(composeSource, reloadedPendingSendContext, { filename: 'static/chat/compose.js' });
+reloadedPendingSendContext.restoreDraft();
+assert.equal(reloadedPendingSendContext.msgInput.value, '', 'reloading the page should not resurrect a stale sending draft after the durable draft has been cleared');
+
 canonicalSendContext.reconcileComposerPendingSendWithEvent({
   type: 'message',
   role: 'user',
@@ -352,3 +363,17 @@ queuedSendContext.reconcileComposerPendingSendWithSession({
 });
 assert.equal(queuedSendContext.msgInput.value, '', 'queued sends should clear the composer once the server reflects the queued request');
 assert.equal(queuedSendContext.localStorage.getItem('draft_session-a'), null, 'queued sends should also clear the stored draft after server confirmation');
+
+const failedSendContext = createContext();
+failedSendContext.dispatchAction = async () => true;
+vm.runInNewContext(composeSource, failedSendContext, { filename: 'static/chat/compose.js' });
+failedSendContext.msgInput.value = 'retry this request';
+failedSendContext.saveDraft();
+failedSendContext.sendMessage();
+await Promise.resolve();
+assert.equal(failedSendContext.localStorage.getItem('draft_session-a'), null, 'pending sends should clear the stored draft before the request is confirmed');
+failedSendContext.restoreFailedSendState('session-a', 'retry this request', [], 'req_test');
+assert.equal(failedSendContext.msgInput.readOnly, false, 'failed sends should restore the composer input state');
+assert.equal(failedSendContext.localStorage.getItem('draft_session-a'), 'retry this request', 'failed sends should put the draft back into durable storage for retry');
+
+console.log('test-chat-compose-draft: ok');
