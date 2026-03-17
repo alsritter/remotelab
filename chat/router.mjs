@@ -28,6 +28,7 @@ import {
   getSession,
   getSessionBoardLayout,
   getTaskBoardState,
+  getSessionEventsAfter,
   listSessions,
   rebuildSessionBoardLayout,
   rebuildTaskBoardState,
@@ -1247,6 +1248,14 @@ export async function handleRequest(req, res) {
   if (sessionGetRoute?.kind === 'events') {
     const { sessionId } = sessionGetRoute;
     if (!requireSessionAccess(res, authSession, sessionId)) return;
+    const filter = typeof parsedUrl.query.filter === 'string'
+      ? String(parsedUrl.query.filter || '').trim().toLowerCase()
+      : '';
+    if (filter === 'all') {
+      const events = await getSessionEventsAfter(sessionId, 0);
+      writeJsonCached(req, res, { sessionId, filter: 'all', events });
+      return;
+    }
     const session = await getSessionForClient(sessionId);
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
@@ -1256,7 +1265,7 @@ export async function handleRequest(req, res) {
     const events = buildSessionDisplayEvents(history, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
-    writeJsonCached(req, res, { sessionId, events });
+    writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return;
   }
 
@@ -1615,10 +1624,6 @@ export async function handleRequest(req, res) {
       }
       if (source.visitorId) {
         writeJson(res, 409, { error: 'Visitor sessions cannot be delegated' });
-        return;
-      }
-      if (source.activity?.run?.state === 'running') {
-        writeJson(res, 409, { error: 'Session is running' });
         return;
       }
 

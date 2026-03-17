@@ -699,7 +699,7 @@ Sessions:
 - `POST /api/sessions`
 - `GET /api/sessions/:id`
 - `PATCH /api/sessions/:id`
-- `GET /api/sessions/:id/events`
+- `GET /api/sessions/:id/events?filter=visible|all`
 - `GET /api/sessions/:id/events/blocks/:startSeq-:endSeq`
 - `GET /api/sessions/:id/events/:seq/body`
 - `POST /api/sessions/:id/messages`
@@ -710,7 +710,7 @@ Sessions:
 
 `GET /api/sessions` is the owner sidebar collection and returns active-session metadata only. Archived sessions are fetched separately through `GET /api/sessions/archived` so the default bootstrap path stays small without introducing pagination.
 
-The session event route is display-first: it returns the full visible timeline needed for the current UI, including inline user/assistant messages and synthetic collapsed blocks for hidden reasoning/tool steps. Expanding a collapsed block triggers `GET /api/sessions/:id/events/blocks/:startSeq-:endSeq`, which returns the hidden events with inline bodies and can be cached immutably. The legacy per-event body route still exists for direct event-body hydration and compatibility, but the common-path transport now avoids shipping hidden tool/reasoning payloads up front.
+The session event route is display-first by default: `GET /api/sessions/:id/events?filter=visible` returns the visible timeline needed for the current UI, including inline user/assistant messages and synthetic collapsed blocks for hidden reasoning/tool steps. Expanding a collapsed block triggers `GET /api/sessions/:id/events/blocks/:startSeq-:endSeq`, which returns the hidden events with inline bodies and can be cached immutably. `filter=all` still exposes the raw deferred-body event index for debugging or compatibility, but the common-path transport now avoids shipping hidden tool/reasoning payloads up front.
 
 Runs:
 

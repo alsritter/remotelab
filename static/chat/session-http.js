@@ -381,8 +381,9 @@ function getEventRenderPlan(sessionId, events) {
 }
 
 function reconcilePendingMessageState(event) {
-  if (event?.type !== "message" || event.role !== "user") return;
-  document.getElementById("optimistic-msg")?.remove();
+  if (typeof reconcileComposerPendingSendWithEvent === "function") {
+    reconcileComposerPendingSendWithEvent(event);
+  }
 }
 
 function normalizeSessionRecord(session, previous = null) {
@@ -675,6 +676,9 @@ function applyAttachedSessionState(id, session) {
 
   const displayName = getSessionDisplayName(session);
   headerTitle.textContent = displayName;
+  if (typeof reconcileComposerPendingSendWithSession === "function") {
+    reconcileComposerPendingSendWithSession(session);
+  }
   updateStatus("connected", session);
   if (typeof renderQueuedMessagePanel === "function") {
     renderQueuedMessagePanel(session);
@@ -712,7 +716,7 @@ async function fetchSessionEvents(sessionId) {
     !hadRenderedMessages ||
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
   const data = await fetchJsonOrRedirect(
-    `/api/sessions/${encodeURIComponent(sessionId)}/events`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
   );
   const events = data.events || [];
   if (currentSessionId !== sessionId) return events;

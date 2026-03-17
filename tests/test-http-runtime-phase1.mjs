@@ -167,6 +167,31 @@ async function stopServer(server) {
   await waitFor(() => server.child.exitCode !== null, 'server shutdown');
 }
 
+function runNodeCli(args, env = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        ...env,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+  });
+}
+
 async function createSession(port, { name = 'Phase1', group = 'Tests', description = 'HTTP runtime' } = {}) {
   const res = await request(port, 'POST', '/api/sessions', {
     folder: repoRoot,
@@ -565,9 +590,10 @@ async function phase10EventIndexContract() {
     const submit = await submitMessage(port, session.id, 'req-index-contract');
     await waitForRunTerminal(port, submit.json.run.id);
 
-    const events = await request(port, 'GET', `/api/sessions/${session.id}/events?afterSeq=0&limit=1`);
+    const events = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=visible&afterSeq=0&limit=1`);
     assert.equal(events.status, 200, 'event history should load successfully');
     assert.ok(Array.isArray(events.json.events), 'event history should return an events array');
+    assert.equal(events.json.filter, 'visible', 'visible timeline requests should advertise the active event filter');
     assert.ok(events.json.events.length >= 3, 'event history should ignore limit pagination and return the full display timeline');
     assert.equal(
       events.json.events.some((event) => event.type === 'tool_use' || event.type === 'tool_result'),
@@ -609,6 +635,18 @@ async function phase10EventIndexContract() {
     const toolUseBody = await request(port, 'GET', `/api/sessions/${session.id}/events/${toolUse.seq}/body`);
     assert.equal(toolUseBody.status, 200, 'legacy tool use body route should still load on demand');
     assert.equal(toolUseBody.json.body.value, 'echo fake', 'legacy tool use body route should preserve the full inline payload');
+
+    const fullEvents = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=all`);
+    assert.equal(fullEvents.status, 200, 'raw event index should still be available through the explicit all filter');
+    assert.equal(fullEvents.json.filter, 'all', 'raw event index responses should advertise the active event filter');
+    assert.ok(
+      fullEvents.json.events.some((event) => event.type === 'tool_use'),
+      'raw event index should still expose tool use events when explicitly requested',
+    );
+    assert.ok(
+      fullEvents.json.events.some((event) => event.type === 'tool_result'),
+      'raw event index should still expose tool result events when explicitly requested',
+    );
 
     console.log('phase10-event-index-contract: ok');
   } finally {
@@ -726,9 +764,9 @@ async function phase13DelegateSession() {
     assert.ok(delegate.json.session?.id, 'delegate should return the child session');
     assert.ok(delegate.json.run?.id, 'delegate should start the child session immediately');
     assert.notEqual(delegate.json.session.id, session.id, 'delegate should create a distinct child session id');
-    assert.equal(delegate.json.session.delegatedFromSessionId, session.id, 'delegate should record the parent session id');
-    assert.equal(delegate.json.session.rootSessionId, session.id, 'first delegated child should use parent as root');
-    assert.equal(typeof delegate.json.session.delegatedAt, 'string', 'delegate should record delegatedAt');
+    assert.equal(delegate.json.session.delegatedFromSessionId, undefined, 'delegate should not persist parent-child metadata on the child session');
+    assert.equal(delegate.json.session.rootSessionId, undefined, 'delegate should not persist lineage metadata on the child session');
+    assert.equal(delegate.json.session.delegatedAt, undefined, 'delegate should not persist delegated timestamps on the child session');
 
     const childRun = await waitForRunTerminal(port, delegate.json.run.id);
     assert.equal(childRun.state, 'completed', 'delegated child run should complete');
@@ -740,23 +778,68 @@ async function phase13DelegateSession() {
     assert.doesNotMatch(manifest.prompt || '', /echo fake/, 'delegated prompt should omit intermediate tool details from the parent');
 
     const parentEvents = await getEvents(port, session.id);
-    const delegateStatus = parentEvents.events.find((event) => event.type === 'status' && /Delegated/.test(event.content || ''));
-    assert.ok(delegateStatus, 'delegation should append a durable status note to the parent session');
+    const delegateNotice = parentEvents.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice');
+    assert.ok(delegateNotice, 'delegation should append a visible handoff note to the parent session');
+    assert.match(delegateNotice.content || '', /Spawned a parallel session/, 'handoff note should describe the spawn');
+    assert.match(delegateNotice.content || '', new RegExp(`\
+session=${delegate.json.session.id}`.trim()), 'handoff note should include a direct session link');
+    assert.match(delegateNotice.content || '', /Figure out a lightweight child-session strategy for parallel work\./, 'handoff note should include the delegated task');
 
     const running = await createSession(port, {
       name: 'Delegate busy',
       group: 'Tests',
-      description: 'Delegate rejection while running',
+      description: 'Delegate while running',
     });
     const runningSubmit = await submitMessage(port, running.id, 'req-delegate-busy', 'slow run for delegate rejection');
     await waitForRunState(port, runningSubmit.json.run.id, 'running');
-    const reject = await request(port, 'POST', `/api/sessions/${running.id}/delegate`, {
+    const runningDelegate = await request(port, 'POST', `/api/sessions/${running.id}/delegate`, {
       task: 'Spawn a child anyway',
     });
-    assert.equal(reject.status, 409, 'delegate should reject running sessions');
-    assert.equal(reject.json.error, 'Session is running');
+    assert.equal(runningDelegate.status, 201, 'delegate should work even when the source session is currently running');
+    assert.ok(runningDelegate.json.session?.id, 'running-source delegation should still create a child session');
+    assert.ok(runningDelegate.json.run?.id, 'running-source delegation should still create a child run');
 
     console.log('phase13-delegate-session: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+async function phase14SessionSpawnCli() {
+  const { home } = setupTempHome();
+  const port = randomPort();
+  const server = await startServer({ home, port, delayMs: 1200 });
+  try {
+    const session = await createSession(port, {
+      name: 'CLI parent',
+      group: 'Tests',
+      description: 'CLI helper contract',
+    });
+
+    const cli = await runNodeCli(
+      ['cli.js', 'session-spawn', '--task', 'Return a focused child-session result.', '--wait', '--json'],
+      {
+        HOME: home,
+        REMOTELAB_SESSION_ID: session.id,
+        REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${port}`,
+      },
+    );
+    assert.equal(cli.code, 0, `session-spawn CLI should exit cleanly: ${cli.stderr}`);
+    const payload = JSON.parse(cli.stdout);
+    assert.equal(payload.sourceSessionId, session.id, 'CLI should default to REMOTELAB_SESSION_ID');
+    assert.equal(payload.task, 'Return a focused child-session result.', 'CLI should echo the delegated task');
+    assert.equal(typeof payload.sessionId, 'string', 'CLI should return the child session id');
+    assert.equal(typeof payload.runId, 'string', 'CLI should return the child run id');
+    assert.match(payload.sessionUrl || '', new RegExp(`session=${payload.sessionId}`), 'CLI should return a direct session URL');
+    assert.equal(payload.state, 'completed', 'CLI --wait should return the terminal child state');
+    assert.equal(payload.reply, 'finished from fake codex', 'CLI --wait should return the child assistant reply');
+
+    const parentEvents = await getEvents(port, session.id);
+    const delegateNotice = parentEvents.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice');
+    assert.ok(delegateNotice, 'CLI helper should still append a visible handoff note to the source session');
+
+    console.log('phase14-session-spawn-cli: ok');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
@@ -779,6 +862,7 @@ const phases = {
   phase11: phase11ForkSession,
   phase12: phase12QueuedMessageRouteContract,
   phase13: phase13DelegateSession,
+  phase14: phase14SessionSpawnCli,
 };
 
 if (phase === 'all') {
