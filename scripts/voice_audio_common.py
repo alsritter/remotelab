@@ -187,6 +187,13 @@ def resolve_sounddevice_device(source=None):
         return normalized_source
 
 
+def chunk_level(chunk):
+    if np is None or chunk is None or not getattr(chunk, "size", 0):
+        return 0.0
+    samples = chunk.astype(np.float64, copy=False)
+    return float(np.sqrt(np.mean(samples * samples)))
+
+
 def capture_until_silence(
     output_path=None,
     *,
@@ -220,6 +227,9 @@ def capture_until_silence(
     started = False
     silent_blocks = 0
     peak_seen = 0.0
+    ambient_levels = deque(maxlen=max(3, int(math.ceil(max(300, pre_roll_ms) / frame_ms))))
+    active_threshold = max(float(speech_threshold), 1e-6)
+    trailing_keep_blocks = max(1, int(math.ceil(200 / frame_ms)))
 
     with sd.InputStream(
         samplerate=sample_rate,
@@ -235,20 +245,26 @@ def capture_until_silence(
             chunk, _overflowed = stream.read(frame_count)
             chunk = chunk.copy()
             peak = float(np.max(np.abs(chunk))) if chunk.size else 0.0
+            level = chunk_level(chunk)
             peak_seen = max(peak_seen, peak)
 
             if not started:
+                ambient_level = sum(ambient_levels) / len(ambient_levels) if ambient_levels else 0.0
+                start_threshold = max(float(speech_threshold), ambient_level * 3.0)
                 pre_roll.append(chunk)
-                if peak >= speech_threshold:
+                if level >= start_threshold:
                     started = True
                     frames.extend(list(pre_roll))
                     silent_blocks = 0
+                    active_threshold = max(float(speech_threshold) * 0.65, ambient_level * 2.0)
                 elif now >= speech_deadline:
                     break
+                else:
+                    ambient_levels.append(level)
                 continue
 
             frames.append(chunk)
-            if peak >= speech_threshold:
+            if level >= active_threshold:
                 silent_blocks = 0
             else:
                 silent_blocks += 1
@@ -264,8 +280,8 @@ def capture_until_silence(
             "sampleRate": sample_rate,
         }
 
-    if silent_blocks > 0 and len(frames) > silent_blocks:
-        frames = frames[:-silent_blocks]
+    if silent_blocks > trailing_keep_blocks and len(frames) > (silent_blocks - trailing_keep_blocks):
+        frames = frames[:-(silent_blocks - trailing_keep_blocks)]
     audio = np.concatenate(frames, axis=0)
     sf.write(resolved_output_path, audio, sample_rate)
     duration_ms = int(round(audio.shape[0] * 1000.0 / sample_rate))
@@ -298,6 +314,7 @@ def transcribe_audio(audio_path, *, model=DEFAULT_MODEL, language="", initial_pr
             initial_prompt=trim(initial_prompt) or None,
             condition_on_previous_text=False,
             temperature=0.0,
+            no_speech_threshold=0.45,
             **decode_options,
         )
     return {

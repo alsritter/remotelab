@@ -30,13 +30,15 @@ def parse_args():
     parser.add_argument("--initial-prompt", default="")
     parser.add_argument("--timeout-ms", type=int, default=15000)
     parser.add_argument("--speech-start-timeout-ms", type=int, default=5000)
-    parser.add_argument("--silence-ms", type=int, default=900)
+    parser.add_argument("--silence-ms", type=int, default=1800)
     parser.add_argument("--frame-ms", type=int, default=100)
-    parser.add_argument("--pre-roll-ms", type=int, default=250)
+    parser.add_argument("--pre-roll-ms", type=int, default=500)
     parser.add_argument("--speech-threshold", type=float, default=0.0015)
     parser.add_argument("--sample-rate", type=int, default=16000)
-    parser.add_argument("--min-duration-ms", type=int, default=450)
+    parser.add_argument("--min-duration-ms", type=int, default=400)
     parser.add_argument("--cooldown-ms", type=int, default=1200)
+    parser.add_argument("--continuation-window-ms", type=int, default=2400)
+    parser.add_argument("--continuation-max-segments", type=int, default=4)
     parser.add_argument("--input-backend", default="")
     parser.add_argument("--input-source", default="")
     parser.add_argument("--ack-sound-path", default="")
@@ -64,6 +66,49 @@ def build_event(args, transcript, *, source, raw_transcript, duration_ms, peak):
     }
 
 
+def capture_segment(args, active_backend, *, speech_start_timeout_ms=None):
+    captured = capture_until_silence(
+        timeout_ms=args.timeout_ms,
+        speech_start_timeout_ms=speech_start_timeout_ms or args.speech_start_timeout_ms,
+        silence_ms=args.silence_ms,
+        frame_ms=args.frame_ms,
+        pre_roll_ms=args.pre_roll_ms,
+        speech_threshold=args.speech_threshold,
+        sample_rate=args.sample_rate,
+        backend=active_backend,
+        source=args.input_source,
+    )
+    audio_path = trim(captured.get("audioPath"))
+    if not captured.get("speechDetected") or not audio_path:
+        return None
+    duration_ms = int(captured.get("durationMs") or 0)
+    if duration_ms < args.min_duration_ms:
+        try:
+            os.remove(audio_path)
+        except OSError:
+            pass
+        return None
+    result = transcribe_audio(
+        audio_path,
+        model=args.model,
+        language=args.language,
+        initial_prompt=args.initial_prompt,
+    )
+    transcript = trim(result["text"])
+    if not transcript:
+        try:
+            os.remove(audio_path)
+        except OSError:
+            pass
+        return None
+    return {
+        "audioPath": audio_path,
+        "durationMs": duration_ms,
+        "peak": float(captured.get("peak") or 0.0),
+        "transcript": transcript,
+    }
+
+
 def main():
     args = parse_args()
     running = True
@@ -72,7 +117,7 @@ def main():
 
     print(
         f"[voice-utterance-loop] listening for any speech via {active_backend} + mlx_whisper"
-        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms)",
+        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms, continuation={args.continuation_window_ms}ms)",
         file=sys.stderr,
     )
 
@@ -96,38 +141,35 @@ def main():
         return
 
     while running:
-        audio_path = ""
+        captured_segments = []
         try:
-            captured = capture_until_silence(
-                timeout_ms=args.timeout_ms,
-                speech_start_timeout_ms=args.speech_start_timeout_ms,
-                silence_ms=args.silence_ms,
-                frame_ms=args.frame_ms,
-                pre_roll_ms=args.pre_roll_ms,
-                speech_threshold=args.speech_threshold,
-                sample_rate=args.sample_rate,
-                backend=active_backend,
-                source=args.input_source,
-            )
-            audio_path = trim(captured.get("audioPath"))
-            if not captured.get("speechDetected") or not audio_path:
-                continue
-            duration_ms = int(captured.get("durationMs") or 0)
-            if duration_ms < args.min_duration_ms:
+            first_segment = capture_segment(args, active_backend)
+            if not first_segment:
                 continue
             now = time.time()
             if now - last_emit_at < args.cooldown_ms / 1000.0:
+                try:
+                    os.remove(first_segment["audioPath"])
+                except OSError:
+                    pass
                 continue
+            captured_segments.append(first_segment)
 
-            result = transcribe_audio(
-                audio_path,
-                model=args.model,
-                language=args.language,
-                initial_prompt=args.initial_prompt,
-            )
-            transcript = trim(result["text"])
+            for _ in range(max(0, args.continuation_max_segments - 1)):
+                next_segment = capture_segment(
+                    args,
+                    active_backend,
+                    speech_start_timeout_ms=args.continuation_window_ms,
+                )
+                if not next_segment:
+                    break
+                captured_segments.append(next_segment)
+
+            transcript = " ".join(segment["transcript"] for segment in captured_segments if trim(segment["transcript"]))
             if not transcript:
                 continue
+            duration_ms = sum(int(segment["durationMs"] or 0) for segment in captured_segments)
+            peak = max(float(segment["peak"] or 0.0) for segment in captured_segments)
             last_emit_at = now
             print(f"[voice-utterance-loop] detected utterance: {transcript}", file=sys.stderr)
             play_ack_sound(args.ack_sound_path)
@@ -138,7 +180,7 @@ def main():
                     source="voice_activity",
                     raw_transcript=transcript,
                     duration_ms=duration_ms,
-                    peak=float(captured.get("peak") or 0.0),
+                    peak=peak,
                 )
             )
         except KeyboardInterrupt:
@@ -147,9 +189,9 @@ def main():
             print(f"[voice-utterance-loop] {error}", file=sys.stderr)
             time.sleep(0.3)
         finally:
-            if audio_path:
+            for segment in captured_segments:
                 try:
-                    os.remove(audio_path)
+                    os.remove(segment["audioPath"])
                 except OSError:
                     pass
 
