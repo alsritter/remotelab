@@ -14,6 +14,10 @@ const baseSession = {
   visitorId: '',
   claudeSessionId: null,
   codexThreadId: null,
+  activeAgreements: [
+    '默认用自然连贯的段落表达，不要自己起标题和列表。',
+    'Agent 更像执行器，Manager 负责统一任务语义和边界。',
+  ],
 };
 
 const freshPrompt = await buildPrompt(
@@ -26,9 +30,11 @@ const freshPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(freshPrompt, /Manager turn policy reminder/);
+assert.match(freshPrompt, /Manager note: RemoteLab remains the manager for this turn/);
 assert.match(freshPrompt, /User message:/);
 assert.match(freshPrompt, /do not mirror its headings, bullets, or checklist structure back to the user/);
+assert.match(freshPrompt, /active working agreements/);
+assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
 
 const resumedPrompt = await buildPrompt(
   'session-test-1',
@@ -43,8 +49,9 @@ const resumedPrompt = await buildPrompt(
   {},
 );
 
-assert.match(resumedPrompt, /Manager turn policy reminder/);
+assert.match(resumedPrompt, /Manager note: RemoteLab remains the manager for this turn/);
 assert.match(resumedPrompt, /Current user message:/);
 assert.doesNotMatch(resumedPrompt, /Memory System — Pointer-First Activation/);
+assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
 console.log('test-session-manager-build-prompt: ok');

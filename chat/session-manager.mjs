@@ -29,6 +29,10 @@ import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import { MANAGER_TURN_POLICY_REMINDER } from './runtime-policy.mjs';
 import {
+  buildSessionAgreementsPromptBlock,
+  normalizeSessionAgreements,
+} from './session-agreements.mjs';
+import {
   buildTemplateFreshnessNotice,
   buildSessionContinuationContextFromBody,
   prepareSessionContinuationBody,
@@ -1836,11 +1840,7 @@ async function findLatestAssistantMessageForRun(sessionId, runId) {
   return null;
 }
 
-const MANAGER_TURN_POLICY_BLOCK = [
-  '[Manager turn policy reminder]',
-  '',
-  MANAGER_TURN_POLICY_REMINDER,
-].join('\n');
+const MANAGER_TURN_POLICY_BLOCK = `Manager note: ${MANAGER_TURN_POLICY_REMINDER}`;
 
 export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
@@ -1871,10 +1871,16 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
 
   let actualText = text;
   if (promptMode === 'default') {
+    const turnPrefixBlocks = [
+      MANAGER_TURN_POLICY_BLOCK,
+      buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
+    ].filter(Boolean);
+    const turnPrefix = turnPrefixBlocks.join('\n\n');
+
     if (continuationContext) {
-      actualText = `${continuationContext}\n\n---\n\n${MANAGER_TURN_POLICY_BLOCK}\n\n---\n\nCurrent user message:\n${text}`;
+      actualText = `${continuationContext}\n\n---\n\n${turnPrefix}\n\n---\n\nCurrent user message:\n${text}`;
     } else {
-      actualText = `${MANAGER_TURN_POLICY_BLOCK}\n\n---\n\n${hasResume ? 'Current user message' : 'User message'}:\n${text}`;
+      actualText = `${turnPrefix}\n\n---\n\n${hasResume ? 'Current user message' : 'User message'}:\n${text}`;
     }
 
     if (!hasResume) {
@@ -2405,6 +2411,10 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedEffort = typeof extra.effort === 'string' ? extra.effort.trim() : '';
   const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking');
   const requestedThinking = extra.thinking === true;
+  const hasRequestedActiveAgreements = Object.prototype.hasOwnProperty.call(extra, 'activeAgreements');
+  const requestedActiveAgreements = hasRequestedActiveAgreements
+    ? normalizeSessionAgreements(extra.activeAgreements || [])
+    : [];
   const requestedInitialNaming = resolveInitialSessionName(name, {
     group: requestedGroup,
     appName: requestedAppName,
@@ -2517,6 +2527,14 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
+        if (hasRequestedActiveAgreements) {
+          if (JSON.stringify(normalizeSessionAgreements(updated.activeAgreements || [])) !== JSON.stringify(requestedActiveAgreements)) {
+            if (requestedActiveAgreements.length > 0) updated.activeAgreements = requestedActiveAgreements;
+            else delete updated.activeAgreements;
+            changed = true;
+          }
+        }
+
         const nextAppId = requestedAppId || resolveEffectiveAppId(updated.appId);
         if (updated.appId !== nextAppId) {
           updated.appId = nextAppId;
@@ -2575,6 +2593,9 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
     if (extra.forkedAt) session.forkedAt = extra.forkedAt;
     if (completionTargets.length > 0) session.completionTargets = completionTargets;
+    if (hasRequestedActiveAgreements && requestedActiveAgreements.length > 0) {
+      session.activeAgreements = requestedActiveAgreements;
+    }
 
     metas.push(session);
     await saveSessionsMeta(metas);
@@ -2695,6 +2716,36 @@ export async function updateSessionGrouping(id, patch = {}) {
       session.updatedAt = nowIso();
     }
     return changed;
+  });
+
+  if (!result.meta) return null;
+  if (result.changed) {
+    broadcastSessionInvalidation(id);
+  }
+  return enrichSessionMeta(result.meta);
+}
+
+export async function updateSessionAgreements(id, patch = {}) {
+  const hasActiveAgreements = Object.prototype.hasOwnProperty.call(patch || {}, 'activeAgreements');
+  if (!hasActiveAgreements) {
+    return getSession(id);
+  }
+
+  const nextActiveAgreements = normalizeSessionAgreements(patch.activeAgreements);
+  const result = await mutateSessionMeta(id, (session) => {
+    const currentActiveAgreements = normalizeSessionAgreements(session.activeAgreements || []);
+    if (JSON.stringify(currentActiveAgreements) === JSON.stringify(nextActiveAgreements)) {
+      return false;
+    }
+
+    if (nextActiveAgreements.length > 0) {
+      session.activeAgreements = nextActiveAgreements;
+    } else if (session.activeAgreements) {
+      delete session.activeAgreements;
+    }
+
+    session.updatedAt = nowIso();
+    return true;
   });
 
   if (!result.meta) return null;
@@ -3328,6 +3379,7 @@ export async function forkSession(sessionId) {
     appId: source.appId || '',
     appName: source.appName || '',
     systemPrompt: source.systemPrompt || '',
+    activeAgreements: source.activeAgreements || [],
     userId: source.userId || '',
     userName: source.userName || '',
     forkedFromSessionId: source.id,
@@ -3401,6 +3453,7 @@ export async function delegateSession(sessionId, payload = {}) {
     sourceId: source.sourceId || '',
     sourceName: source.sourceName || '',
     systemPrompt: source.systemPrompt || '',
+    activeAgreements: source.activeAgreements || [],
     model: source.model || '',
     effort: source.effort || '',
     thinking: source.thinking === true,

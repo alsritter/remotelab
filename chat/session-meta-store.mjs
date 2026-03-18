@@ -11,6 +11,7 @@ import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
+import { normalizeSessionAgreements } from './session-agreements.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheMtimeMs = null;
@@ -73,6 +74,19 @@ function normalizeStoredSessionMeta(meta) {
       }
     } else {
       delete normalized.lastReviewedAt;
+      changed = true;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'activeAgreements')) {
+    const nextActiveAgreements = normalizeSessionAgreements(normalized.activeAgreements);
+    if (nextActiveAgreements.length > 0) {
+      if (JSON.stringify(normalized.activeAgreements) !== JSON.stringify(nextActiveAgreements)) {
+        normalized.activeAgreements = nextActiveAgreements;
+        changed = true;
+      }
+    } else {
+      delete normalized.activeAgreements;
       changed = true;
     }
   }

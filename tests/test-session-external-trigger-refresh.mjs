@@ -27,6 +27,7 @@ try {
     group: 'Mail',
     description: 'Inbound email from owner@example.com about hello',
     systemPrompt: 'Reply with plain text only.',
+    activeAgreements: ['Keep replies as plain text email bodies.'],
     externalTriggerId: 'email-thread:%3Croot-thread%40example.com%3E',
     completionTargets: [{
       id: 'email_target_1',
@@ -59,6 +60,7 @@ try {
   assert.equal(second.name, 'hello', 'reused connector sessions should preserve the original normalized title');
   assert.equal(second.description, 'Inbound email from owner@example.com about Re: hello');
   assert.equal(second.systemPrompt, 'Reply with plain text only and keep thread continuity.');
+  assert.deepEqual(second.activeAgreements, ['Keep replies as plain text email bodies.']);
   assert.equal(second.completionTargets?.length, 1);
   assert.equal(second.completionTargets?.[0]?.id, 'email_target_2');
   assert.equal(second.completionTargets?.[0]?.inReplyTo, '<follow-up@example.com>');
@@ -67,6 +69,7 @@ try {
   const loaded = await getSession(first.id);
   assert.equal(loaded?.id, first.id);
   assert.equal(loaded?.description, 'Inbound email from owner@example.com about Re: hello');
+  assert.deepEqual(loaded?.activeAgreements, ['Keep replies as plain text email bodies.']);
   assert.equal(loaded?.completionTargets?.[0]?.id, 'email_target_2');
   assert.equal(loaded?.completionTargets?.[0]?.inReplyTo, '<follow-up@example.com>');
 } finally {

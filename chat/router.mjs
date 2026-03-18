@@ -37,6 +37,7 @@ import {
   submitHttpMessage,
   updateSessionLastReviewedAt,
   updateSessionGrouping,
+  updateSessionAgreements,
   updateSessionWorkflowClassification,
   updateSessionRuntimePreferences,
 } from './session-manager.mjs';
@@ -1414,6 +1415,7 @@ export async function handleRequest(req, res) {
     const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
+    const hasActiveAgreementsPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'activeAgreements');
     const hasWorkflowStatePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowState');
     const hasWorkflowPriorityPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowPriority');
     const hasLastReviewedAtPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'lastReviewedAt');
@@ -1448,6 +1450,17 @@ export async function handleRequest(req, res) {
     if (hasDescriptionPatch && patch.description !== null && typeof patch.description !== 'string') {
       writeJson(res, 400, { error: 'description must be a string or null' });
       return;
+    }
+    if (hasActiveAgreementsPatch && patch.activeAgreements !== null && !Array.isArray(patch.activeAgreements)) {
+      writeJson(res, 400, { error: 'activeAgreements must be an array of strings or null' });
+      return;
+    }
+    if (hasActiveAgreementsPatch && Array.isArray(patch.activeAgreements)) {
+      const invalidAgreement = patch.activeAgreements.find((entry) => typeof entry !== 'string');
+      if (invalidAgreement !== undefined) {
+        writeJson(res, 400, { error: 'activeAgreements must contain only strings' });
+        return;
+      }
     }
     if (hasWorkflowStatePatch && patch.workflowState !== null && typeof patch.workflowState !== 'string') {
       writeJson(res, 400, { error: 'workflowState must be a string or null' });
@@ -1502,6 +1515,11 @@ export async function handleRequest(req, res) {
       session = await updateSessionGrouping(sessionId, {
         ...(hasGroupPatch ? { group: patch.group ?? '' } : {}),
         ...(hasDescriptionPatch ? { description: patch.description ?? '' } : {}),
+      }) || session;
+    }
+    if (hasActiveAgreementsPatch) {
+      session = await updateSessionAgreements(sessionId, {
+        activeAgreements: patch.activeAgreements ?? [],
       }) || session;
     }
     if (hasWorkflowStatePatch || hasWorkflowPriorityPatch) {
