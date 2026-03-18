@@ -13,7 +13,7 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 ## Target product shape
 
 - `Board` becomes the primary owner overview of live work.
-- One high-trust manager surface can accept a user request and fan it out into multiple focused child sessions.
+- One high-trust manager surface can accept a user request and fan it out into multiple focused parallel sessions.
 - Child sessions stay mostly hidden by default; the board and handoff links are the main visibility layer.
 - Context carry stays explicit and bounded; compaction/context reuse is infrastructure, not the main product surface.
 - Sessions remain the canonical durable object; the board is a derived surface over session metadata and activity.
@@ -36,13 +36,13 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 ### 2. Multi-session fan-out second
 
 - The product win is not only "forking"; it is one user turn intentionally spawning several bounded worker sessions.
-- Keep the manager/parent session lightweight and orchestration-focused.
-- Return visible child-session links and concise aggregation back into the parent, rather than pushing every sub-step into the main thread.
+- Keep the source/dispatch session lightweight and orchestration-focused, not a heavy parent container.
+- Treat spawned sessions as normal independent sessions surfaced mainly through the session list/board, with concise aggregation back into the source session when useful.
 
 ### 3. Context carry/cache as enabling infrastructure
 
-- Fan-out is only pleasant if child sessions receive bounded handoff context instead of replaying an entire parent transcript.
-- Compaction and prepared context reuse matter because they keep the manager and child sessions small enough to remain cheap and fast.
+- Fan-out is only pleasant if spawned sessions receive bounded handoff context instead of replaying an entire parent transcript.
+- Compaction and prepared context reuse matter because they keep the source and spawned sessions small enough to remain cheap and fast.
 - This should be verified and tuned now, but it should not become a larger refactor program by itself.
 
 ## Immediate gaps to close
@@ -55,8 +55,8 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 
 ### Multi-session gaps
 
-- Promote the existing delegation primitive into an intentional many-child workflow contract.
-- Confirm the parent session always receives visible handoff notices and child-result aggregation when one turn fans out.
+- Promote the existing delegation primitive into an intentional many-session workflow contract.
+- Confirm one turn can fan out into several independent sessions without requiring heavy parent-side handoff UI.
 - Decide whether the first shipped surface is agent-internal only, owner-visible UI, or both.
 
 ### Context/cache gaps
@@ -76,9 +76,9 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 ## Shipping candidate for the next push
 
 - The owner lands on `Board` as the default orchestration surface rather than treating it as a secondary tab experiment.
-- A manager/control session can fan one user turn out into several focused child sessions and report back with visible handoff/result links.
+- A manager/control session can fan one user turn out into several focused independent sessions and report back with a light summary when useful.
 - Session cards on the board tell the truth well enough for daily operation using only session-derived metadata and activity.
-- Context carry remains bounded and observable so a child session or resumed session is not silently replaying too much history.
+- Context carry remains bounded and observable so a spawned session or resumed session is not silently replaying too much history.
 
 ## The next four slices
 
@@ -87,7 +87,7 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 - Keep the current session-derived board model; do not add a new durable task object.
 - Make the shipped board contract explicit: `Active`, `Waiting`, `Open`, `Parked`, `Done` stay the primary columns.
 - Keep grouping/project expression lightweight for now: use `group` first, and only add `project` if board usage immediately proves `group` is too weak.
-- Child sessions should stay mostly hidden by default unless they are waiting on the user, manually opened, pinned, or otherwise promoted by priority.
+- Spawned sessions should stay mostly hidden by default unless they are waiting on the user, manually opened, pinned, or otherwise promoted by priority.
 
 ### Slice 2 — board-driving metadata write path
 
@@ -97,9 +97,9 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 
 ### Slice 3 — one-turn multi-session fan-out
 
-- Promote the current single-child delegation primitive into a deliberate multi-child orchestration pattern.
-- Require one visible parent-side handoff note per spawned child plus one concise parent-side aggregation result at the end.
-- Keep child sessions operationally independent; avoid over-modeling persistent hierarchy before lived use proves we need it.
+- Promote the current single-session delegation primitive into a deliberate multi-session orchestration pattern.
+- Prefer lightweight source-session summaries and normal session-list/board surfacing over one visible handoff note per spawned session.
+- Keep spawned sessions operationally independent; avoid over-modeling persistent hierarchy before lived use proves we need it.
 - Use the existing failing recursive fan-out validation as the first concrete regression to fix rather than inventing a new orchestration abstraction.
 
 ### Slice 4 — context carry/cache confirmation
@@ -112,7 +112,7 @@ Concrete execution companion: `notes/current/board-fanout-next-push.md`
 
 - `Board` is good enough to use as the owner’s primary work overview.
 - `group` and `description` are writable through session APIs, not only via side effects or UI-only flows.
-- One-turn multi-session fan-out is demoable end to end with visible parent handoffs and child links.
+- One-turn multi-session fan-out is demoable end to end with independent spawned sessions and a light aggregation path.
 - The known recursive fan-out regression is fixed.
 - The known fork-context regression is either fixed or explicitly judged non-blocking for this push.
 - We can tell, at least in debug/operator surfaces, whether continuation came from history, summary handoff, or prepared context.

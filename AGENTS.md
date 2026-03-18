@@ -229,7 +229,7 @@ Current operating rule: prefer capability-first shipping slices that validate th
 
 ### P1 — Next Up
 - [ ] Make the `Board` the primary owner work surface — productize the existing session-derived board instead of reviving a separate Progress/task model; define columns, grouping, child-session visibility, and the default owner view clearly
-- [ ] Multi-session fan-out from one owner turn — let a manager/control session intentionally spawn several focused child sessions, keep them mostly hidden by default, and return visible handoff/result links
+- [ ] Multi-session fan-out from one owner turn — let a manager/control session intentionally spawn several focused parallel sessions, keep hierarchy light, and rely on the session list/board plus concise aggregation rather than heavy parent-side handoff UI
 - [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, and summary/cache reuse so board + multi-session flows stay fast and bounded
 - [ ] Expose AI-controlled session presentation (`title`, `group`, `description`) via session APIs, then validate the AI-owned board/inbox UX and consolidate current project-session TODOs into one dedicated prioritization session
 - [ ] Universal control inbox / dispatcher session — a default high-trust intake surface layered on top of the board + multi-session contract, not one giant always-growing work thread

@@ -68,7 +68,7 @@ function buildFakeCodexScript() {
     'const execFileAsync = promisify(execFile);',
     "const delay = Number(process.env.FAKE_CODEX_DELAY_MS || '120');",
     "const prompt = typeof process.argv[process.argv.length - 1] === 'string' ? process.argv[process.argv.length - 1] : '';",
-    "const shouldSpawnThreeChildren = prompt.includes('spawn exactly three parallel child sessions') && !prompt.includes('## Delegated task');",
+    "const shouldSpawnThreeChildren = prompt.includes('spawn exactly three parallel sessions') && !prompt.includes('## Delegated task');",
     'let cancelled = false;',
     "process.on('SIGTERM', () => {",
     '  cancelled = true;',
@@ -107,7 +107,7 @@ function buildFakeCodexScript() {
     '        item: {',
     '          type: \"command_execution\",',
     "          command: shouldSpawnThreeChildren ? 'remotelab session-spawn x3' : 'echo fake',",
-    "          aggregated_output: shouldSpawnThreeChildren ? 'spawned child sessions' : 'fake',",
+    "          aggregated_output: shouldSpawnThreeChildren ? 'spawned parallel sessions' : 'fake',",
     '          exit_code: 0,',
     '          status: \"completed\",',
     '        },',
@@ -117,7 +117,7 @@ function buildFakeCodexScript() {
     '        if (cancelled) return;',
     '        console.log(JSON.stringify({',
     '          type: \"item.completed\",',
-    '          item: { type: \"agent_message\", text: `spawned 3 child sessions\\n${JSON.stringify(children)}` },',
+    '          item: { type: \"agent_message\", text: `spawned 3 parallel sessions\\n${JSON.stringify(children)}` },',
     '        }));',
     '      } else {',
     '        console.log(JSON.stringify({',
@@ -312,7 +312,7 @@ try {
       port,
       manager.id,
       'req-recursive-session-spawn',
-      'Manager test: spawn exactly three parallel child sessions and keep them independent.',
+      'Manager test: spawn exactly three parallel sessions and keep them independent.',
     );
     managerRunId = submit.json.run.id;
     const managerRun = await waitForRunTerminal(port, submit.json.run.id);
@@ -322,47 +322,42 @@ try {
       const listed = await listSessions(port);
       const children = listed.filter((entry) => entry.id !== manager.id);
       return children.length === 3 ? listed : false;
-    }, 'three recursively spawned child sessions');
+    }, 'three recursively spawned parallel sessions');
     const childSessions = sessions.filter((entry) => entry.id !== manager.id);
-    assert.equal(childSessions.length, 3, 'manager should spawn exactly three child sessions');
+    assert.equal(childSessions.length, 3, 'manager should spawn exactly three parallel sessions');
 
     const managerEvents = await getEvents(port, manager.id);
-    const delegateNotices = managerEvents.filter(
-      (event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice',
-    );
-    assert.equal(delegateNotices.length, 3, 'source session should receive one visible handoff note per spawned child');
-
     const managerReply = findLatestAssistantReply(managerEvents, submit.json.run.id);
     assert.ok(managerReply, 'manager run should record a final assistant reply');
-    assert.match(managerReply.content || '', /spawned 3 child sessions/, 'manager reply should summarize the fan-out');
+    assert.match(managerReply.content || '', /spawned 3 parallel sessions/, 'manager reply should summarize the fan-out');
 
     const summaryPayload = JSON.parse((managerReply.content || '').split('\n').slice(1).join('\n').trim());
-    assert.equal(summaryPayload.length, 3, 'manager reply should list all child runs');
+    assert.equal(summaryPayload.length, 3, 'manager reply should list all spawned runs');
 
     const listedChildIds = childSessions.map((session) => session.id).sort();
     const repliedChildIds = summaryPayload.map((entry) => entry.sessionId).sort();
     assert.deepEqual(repliedChildIds, listedChildIds, 'reply summary should match the actual spawned session ids');
 
     for (const childSummary of summaryPayload) {
-      assert.equal(typeof childSummary.runId, 'string', 'each spawned child should report its run id');
+      assert.equal(typeof childSummary.runId, 'string', 'each spawned session should report its run id');
 
       const childRun = await waitForRunTerminal(port, childSummary.runId);
-      assert.equal(childRun.state, 'completed', 'each spawned child run should complete');
+      assert.equal(childRun.state, 'completed', 'each spawned session run should complete');
 
       const manifest = readRunManifest(home, childSummary.runId);
-      assert.equal(manifest.options?.model, 'fake-model', 'spawned child runs should inherit the pinned cheap model');
-      assert.equal(manifest.options?.effort, 'low', 'spawned child runs should inherit the pinned cheap effort');
-      assert.match(manifest.prompt || '', /## Delegated task/, 'spawned child prompts should receive bounded delegation context');
+      assert.equal(manifest.options?.model, 'fake-model', 'spawned session runs should inherit the pinned cheap model');
+      assert.equal(manifest.options?.effort, 'low', 'spawned session runs should inherit the pinned cheap effort');
+      assert.match(manifest.prompt || '', /## Delegated task/, 'spawned session prompts should receive bounded delegation context');
 
       const childDetail = await request(port, 'GET', `/api/sessions/${childSummary.sessionId}`);
-      assert.equal(childDetail.status, 200, 'spawned child session should be readable');
-      assert.equal(childDetail.json.session?.model, 'fake-model', 'spawned child session should inherit the pinned model');
-      assert.equal(childDetail.json.session?.effort, 'low', 'spawned child session should inherit the pinned effort');
-      assert.equal(childDetail.json.session?.delegatedFromSessionId, undefined, 'spawned child session should stay independent');
+      assert.equal(childDetail.status, 200, 'spawned session should be readable');
+      assert.equal(childDetail.json.session?.model, 'fake-model', 'spawned session should inherit the pinned model');
+      assert.equal(childDetail.json.session?.effort, 'low', 'spawned session should inherit the pinned effort');
+      assert.equal(childDetail.json.session?.delegatedFromSessionId, undefined, 'spawned session should stay independent');
 
       const childEvents = await getEvents(port, childSummary.sessionId);
       const childReply = findLatestAssistantReply(childEvents, childSummary.runId);
-      assert.match(childReply?.content || '', /finished from fake codex/, 'child session should still execute its own task');
+      assert.match(childReply?.content || '', /finished from fake codex/, 'spawned session should still execute its own task');
     }
 
     console.log('test-http-session-spawn-recursive: ok');

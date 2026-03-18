@@ -11,20 +11,20 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 ## Product shape for the next push
 
 - The owner lands in `Board` as the default work overview.
-- One manager/control session can take a single user request and fan it out into several focused child sessions.
+- One manager/control session can take a single user request and fan it out into several focused parallel sessions.
 - The board remains session-derived; there is still no separate durable `Task` object.
-- Child sessions stay mostly hidden unless they become actionable, promoted, pinned, or explicitly opened.
+- Spawned sessions stay mostly hidden unless they become actionable, promoted, pinned, or explicitly opened.
 - Context carry stays bounded and observable so the fan-out workflow remains cheap, fast, and understandable.
 
 ## Demo we should be able to show
 
 1. Open RemoteLab and land on `Board`.
 2. Enter one manager-style request such as “把这个需求拆成 3 个并行子任务，并汇总结果”.
-3. The manager session spawns multiple child sessions.
+3. The manager session spawns multiple parallel sessions.
 4. `Board` shows those sessions in sensible columns like `Active`, `Waiting`, `Open`, `Done`.
-5. The parent session receives one visible handoff note per child plus one concise aggregate summary.
-6. If one child needs human input, it appears clearly in `Waiting` and can be opened directly from the board.
-7. We can inspect how a child or resumed turn got its context: raw history, summary handoff, or prepared branch context.
+5. The source session stays lightweight: it may show a concise aggregate summary, while the spawned sessions are mainly surfaced through the board/session list.
+6. If one spawned session needs human input, it appears clearly in `Waiting` and can be opened directly from the board.
+7. We can inspect how a spawned or resumed turn got its context: raw history, summary handoff, or prepared branch context.
 
 ## Scope freeze
 
@@ -32,7 +32,7 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 
 - `Board` as the primary owner work surface.
 - Session metadata sufficient to drive that board cleanly.
-- One-turn multi-session fan-out with visible parent-side orchestration.
+- One-turn multi-session fan-out with lightweight source-session orchestration.
 - Context carry/cache confirmation for the new workflow.
 - Fixing regressions that block the above slices.
 
@@ -56,7 +56,7 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 
 - Keep the current board columns: `Active`, `Waiting`, `Open`, `Parked`, `Done`.
 - Keep session-derived truth only: card content comes from session metadata and activity, not a new task layer.
-- Default child visibility should be conservative: show child sessions when they are waiting on the user, pinned, manually opened, high priority, or otherwise promoted by board rules.
+- Default spawned-session visibility should be conservative: show them when they are waiting on the user, pinned, manually opened, high priority, or otherwise promoted by board rules.
 
 **Main files**
 
@@ -106,8 +106,8 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 **Product rules**
 
 - Do not introduce a batch-orchestration object yet.
-- Keep child sessions operationally independent after spawn.
-- Require parent visibility: one handoff note per child, one aggregate result back to the parent.
+- Keep spawned sessions operationally independent after spawn.
+- Prefer a concise source-session aggregation and normal session-list/board surfacing over one required handoff note per spawned session.
 - Prefer reusing the current spawn/delegate primitives over creating a separate orchestration stack too early.
 
 **Main files**
@@ -120,9 +120,9 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 **Acceptance**
 
 - Recursive or repeated spawn works end to end.
-- Parent transcript shows visible child handoffs.
-- Parent receives a concise final aggregation.
-- Child sessions remain independent and bounded.
+- Source-session orchestration stays lightweight.
+- The source session can return a concise final aggregation.
+- Spawned sessions remain independent and bounded.
 
 ### Slice 4 — context carry/cache confirmation
 
@@ -175,6 +175,6 @@ Companion note: `notes/current/capability-first-shipping-plan.md`
 - `Board` is good enough to operate as the owner default.
 - Board-driving metadata is writable through session APIs.
 - One-turn multi-session fan-out is demoable end to end.
-- Parent-side handoffs and final aggregation are visible and reliable.
+- Final aggregation is reliable without requiring heavy parent-side handoff UI.
 - We can explain how a run got its continuation context.
 - The two current red tests above are either green or explicitly judged non-blocking with a clear reason.
