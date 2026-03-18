@@ -13,6 +13,7 @@ process.env.HOME = home;
 
 const {
   DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+  MANAGER_TURN_POLICY_REMINDER,
   applyManagedRuntimeEnv,
   ensureManagedCodexHome,
 } = await import('../chat/runtime-policy.mjs');
@@ -57,6 +58,11 @@ try {
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /RemoteLab owns the higher-level workflow, memory policy, and reply style/,
     'default Codex developer instructions should reinforce manager ownership',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /Do not mirror the manager prompt structure or provider-native report formatting back to the user by default/,
+    'turn-level policy reminder should explicitly block prompt-structure mirroring',
   );
 
   console.log('test-runtime-policy: ok');

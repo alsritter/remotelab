@@ -27,6 +27,7 @@ import {
 } from './summarizer.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
+import { MANAGER_TURN_POLICY_REMINDER } from './runtime-policy.mjs';
 import {
   buildTemplateFreshnessNotice,
   buildSessionContinuationContextFromBody,
@@ -1835,7 +1836,13 @@ async function findLatestAssistantMessageForRun(sessionId, runId) {
   return null;
 }
 
-async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
+const MANAGER_TURN_POLICY_BLOCK = [
+  '[Manager turn policy reminder]',
+  '',
+  MANAGER_TURN_POLICY_REMINDER,
+].join('\n');
+
+export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
   const promptMode = toolDefinition?.promptMode === 'bare-user'
     ? 'bare-user'
@@ -1865,9 +1872,9 @@ async function buildPrompt(sessionId, session, text, previousTool, effectiveTool
   let actualText = text;
   if (promptMode === 'default') {
     if (continuationContext) {
-      actualText = `${continuationContext}\n\n---\n\nCurrent user message:\n${text}`;
-    } else if (!hasResume) {
-      actualText = `User message:\n${text}`;
+      actualText = `${continuationContext}\n\n---\n\n${MANAGER_TURN_POLICY_BLOCK}\n\n---\n\nCurrent user message:\n${text}`;
+    } else {
+      actualText = `${MANAGER_TURN_POLICY_BLOCK}\n\n---\n\n${hasResume ? 'Current user message' : 'User message'}:\n${text}`;
     }
 
     if (!hasResume) {
