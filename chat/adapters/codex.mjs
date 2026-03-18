@@ -188,16 +188,33 @@ function parseItem(item) {
  * `REMOTELAB_CODEX_SYSTEM_PREFIX` if they want to force an extra prefix.
  */
 const CODEX_SYSTEM_PREFIX = process.env.REMOTELAB_CODEX_SYSTEM_PREFIX || '';
+/**
+ * Optional developer instructions passed through Codex's own supported
+ * `developer_instructions` config key. This is stronger than a prompt prefix
+ * when the manager needs to shape the agent's default reply style.
+ */
+const CODEX_DEVELOPER_INSTRUCTIONS = process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS || '';
+
+function encodeTomlString(value) {
+  return JSON.stringify(String(value || ''));
+}
 
 /**
  * Build args for spawning Codex exec.
  */
 export function buildCodexArgs(prompt, options = {}) {
   const args = ['exec'];
+  const developerInstructions = typeof options.developerInstructions === 'string'
+    ? options.developerInstructions.trim()
+    : CODEX_DEVELOPER_INSTRUCTIONS.trim();
 
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
   args.push('--skip-git-repo-check');
+
+  if (developerInstructions) {
+    args.push('-c', `developer_instructions=${encodeTomlString(developerInstructions)}`);
+  }
 
   if (options.model) {
     args.push('-m', options.model);

@@ -54,6 +54,7 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       threadId: options.codexThreadId,
       model: options.model,
       reasoningEffort: options.effort,
+      developerInstructions: options.developerInstructions,
       systemPrefix: options.systemPrefix,
     });
   } else {

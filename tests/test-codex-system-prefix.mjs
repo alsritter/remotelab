@@ -10,5 +10,16 @@ assert.equal(args.includes('IMPORTANT: Complete ALL requested work in this singl
 const overridden = buildCodexArgs('Say hello.', { systemPrefix: 'PREFIX\n\n' });
 assert.equal(overridden.at(-1), 'PREFIX\n\nSay hello.');
 
+const withDeveloperInstructions = buildCodexArgs('Say hello.', {
+  developerInstructions: 'Use plain prose.',
+});
+const developerInstructionIndex = withDeveloperInstructions.indexOf('-c');
+assert.notEqual(developerInstructionIndex, -1);
+assert.equal(
+  withDeveloperInstructions[developerInstructionIndex + 1],
+  'developer_instructions="Use plain prose."',
+);
+
 console.log('ok - codex args do not inject a default system prefix');
 console.log('ok - codex args still allow explicit per-run system prefixes');
+console.log('ok - codex args allow explicit developer instructions via config override');

@@ -75,6 +75,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - In RemoteLab, this presents as a "silent" or "no response" Codex session because the process exits before emitting JSON events; Claude does not have this constraint, so the mismatch looks path-specific.
 - If the product intentionally launches agents from `~` or other non-repo roots, pass `--skip-git-repo-check` in the Codex adapter (or explicitly trust that directory in Codex config).
 
+### Codex Reply-Style Steering Is Most Reliable Via `developer_instructions` (2026-03-18)
+- In current ChatGPT-authenticated `codex exec` runs, Codex's official `developer_instructions` config path reliably changes reply style, including suppressing default heading/list-heavy answers in favor of connected prose.
+- On the same setup, the documented top-level `instructions` and `model_instructions_file` controls did not materially change trivial `codex exec` outputs in smoke tests, even though the open-source code and schema suggest they should affect base instructions.
+- For manager-controlled style shaping in wrappers like RemoteLab, prefer passing `-c developer_instructions=...` on each Codex invocation over relying on prompt prefixes alone.
+
 ### KYC / Account Registration Requests (2026-03-06)
 - If a user asks for a "public address" or advice on what address/location to enter for account opening, treat it as potential misrepresentation/compliance evasion.
 - Do not help source placeholder/fake addresses or craft deceptive explanations.
