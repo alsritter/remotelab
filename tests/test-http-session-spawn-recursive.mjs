@@ -347,7 +347,8 @@ try {
       const manifest = readRunManifest(home, childSummary.runId);
       assert.equal(manifest.options?.model, 'fake-model', 'spawned session runs should inherit the pinned cheap model');
       assert.equal(manifest.options?.effort, 'low', 'spawned session runs should inherit the pinned cheap effort');
-      assert.match(manifest.prompt || '', /## Delegated task/, 'spawned session prompts should receive bounded delegation context');
+      assert.match(manifest.prompt || '', new RegExp(`Parent session id: ${manager.id}`), 'spawned session prompts should receive a minimal parent-session pointer');
+      assert.doesNotMatch(manifest.prompt || '', /## Delegated task/, 'spawned session prompts should avoid heavy delegated-task formatting');
 
       const childDetail = await request(port, 'GET', `/api/sessions/${childSummary.sessionId}`);
       assert.equal(childDetail.status, 200, 'spawned session should be readable');

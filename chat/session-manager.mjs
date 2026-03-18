@@ -1464,36 +1464,10 @@ function buildDelegationHandoff({
 }) {
   const normalizedTask = clipCompactionSection(task, 4000);
   const sourceId = typeof source?.id === 'string' ? source.id.trim() : '';
-  const parentName = typeof source?.name === 'string' ? source.name.trim() : '';
-  const encodedSourceId = sourceId ? encodeURIComponent(sourceId) : '<source-session-id>';
-
-  const lines = [
-    'You are a child RemoteLab session created to work in parallel with a parent session.',
-    'Do only the delegated task below.',
-    'No full parent transcript was copied into this session on purpose.',
-    'If key context is missing, inspect the source session directly instead of guessing.',
-    '',
-    '## Delegated task',
-    normalizedTask || '(no delegated task provided)',
-  ];
-
-  lines.push('', '## Source session reference');
-  if (sourceId) lines.push(`- Session ID: ${sourceId}`);
-  if (parentName) lines.push(`- Title: ${parentName}`);
-  lines.push(
-    '- Base URL: use REMOTELAB_CHAT_BASE_URL from the shell environment.',
-    `- Session detail: /api/sessions/${encodedSourceId}`,
-    `- Event list: /api/sessions/${encodedSourceId}/events`,
-    `- Event body: /api/sessions/${encodedSourceId}/events/<seq>/body`,
-  );
-
-  lines.push(
-    '',
-    '## Context contract',
-    '- Parent transcript, tool logs, and intermediate implementation details were intentionally omitted.',
-    '- If API reads need owner auth, bootstrap a cookie via GET /?token=... using the local owner token and reuse it.',
-  );
-
+  const lines = [normalizedTask || '(no delegated task provided)'];
+  if (sourceId) {
+    lines.push('', `Parent session id: ${sourceId}`);
+  }
   return lines.join('\n');
 }
 

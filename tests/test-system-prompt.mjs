@@ -26,10 +26,10 @@ assert.match(context, /not primarily a user-facing UI action/);
 assert.match(context, /independent worker that simply received bounded handoff context/);
 assert.match(context, /remotelab session-spawn --task/);
 assert.match(context, /--wait --json/);
-assert.match(context, /Default to lean delegation/);
-assert.match(context, /Do not inline large parent transcripts, tool logs/);
-assert.match(context, /query the source session on demand/);
-assert.match(context, /GET \/api\/sessions\/<source-session-id>\/events/);
+assert.match(context, /Keep spawned-session handoff minimal/);
+assert.match(context, /focused task plus the parent session id is enough/);
+assert.match(context, /Do not impose a heavy handoff template by default/);
+assert.match(context, /let the child fetch it from the parent session/);
 assert.match(context, /REMOTELAB_SESSION_ID/);
 assert.match(context, /session-test-123/);
 
