@@ -777,8 +777,11 @@ async function phase13DelegateSession() {
 
     const manifest = readRunManifest(home, delegate.json.run.id);
     assert.match(manifest.prompt || '', /Figure out a lightweight child-session strategy for parallel work\./, 'delegated prompt should include the requested child task');
-    assert.match(manifest.prompt || '', /Please investigate the board design problem before delegating/, 'delegated prompt should include the latest parent user message');
-    assert.match(manifest.prompt || '', /finished from fake codex/, 'delegated prompt should include the latest parent assistant result');
+    assert.match(manifest.prompt || '', /## Source session reference/, 'delegated prompt should include a source-session reference block');
+    assert.match(manifest.prompt || '', new RegExp(`/api/sessions/${session.id}/events`), 'delegated prompt should explain how to query source-session events on demand');
+    assert.match(manifest.prompt || '', /No full parent transcript was copied into this session on purpose\./, 'delegated prompt should explain the lean handoff contract');
+    assert.doesNotMatch(manifest.prompt || '', /Please investigate the board design problem before delegating/, 'delegated prompt should omit the latest parent user message by default');
+    assert.doesNotMatch(manifest.prompt || '', /finished from fake codex/, 'delegated prompt should omit the latest parent assistant result by default');
     assert.doesNotMatch(manifest.prompt || '', /echo fake/, 'delegated prompt should omit intermediate tool details from the parent');
 
     const parentEvents = await getEvents(port, session.id);

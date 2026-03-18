@@ -75,6 +75,9 @@ ${MANAGER_RUNTIME_BOUNDARY_SECTION}
   - remotelab session-spawn --task "<focused task>" --json
 - Waited subagent variant:
   - remotelab session-spawn --task "<focused task>" --wait --json
+- Default to lean delegation: pass the focused task first, then let the child fetch more only if needed.
+- Do not inline large parent transcripts, tool logs, or stale implementation debris into the spawn task by default.
+- When extra context is required, query the source session on demand instead of guessing from partial carry-over.
 - If the remotelab command is unavailable in PATH, use:
   - node "$REMOTELAB_PROJECT_ROOT/cli.js" session-spawn --task "<focused task>" --json
 - The shell environment exposes:
@@ -82,6 +85,11 @@ ${MANAGER_RUNTIME_BOUNDARY_SECTION}
   - REMOTELAB_CHAT_BASE_URL — local RemoteLab API base URL (usually http://127.0.0.1:${CHAT_PORT})
   - REMOTELAB_PROJECT_ROOT — local RemoteLab project root for fallback commands
 - The spawn command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --source-session explicitly.
+- Useful on-demand source-session reads:
+  - GET /api/sessions/<source-session-id>
+  - GET /api/sessions/<source-session-id>/events
+  - GET /api/sessions/<source-session-id>/events/<seq>/body
+- If API reads need owner auth, bootstrap a cookie via GET /?token=... using the local owner token from ~/.config/remotelab/auth.json, then reuse that cookie.
 - RemoteLab may append a lightweight source-session note, but do not rely on heavy parent/child UI; normal session-list and board surfaces are the primary way spawned sessions show up.
 - Use this capability judiciously: split work when it reduces context pressure or enables real parallelism, not for every trivial substep.
 
