@@ -206,6 +206,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Business-specific side effects triggered by finished runs, such as outbound email delivery, should not live under the core `chat/` domain modules even when the chat server invokes them.
 - A cleaner split is: `chat/` owns sessions, runs, and event history; integration modules under `lib/` or connector-specific areas consume those primitives and perform provider-specific delivery work.
 
+### Connector HTTP Sends Must Respect Proxy Reality (2026-03-19)
+- Do not assume Node's built-in `fetch` will successfully inherit the operator's shell proxy setup on every machine; in real local-first deployments it can fail with `fetch failed` / `UND_ERR_CONNECT_TIMEOUT` while `curl` to the same URL succeeds.
+- For connector-owned outbound delivery paths, prefer a transport that explicitly respects proxy environment variables, or keep a proxy-aware `curl` fallback so completion-side effects do not silently die after the model already produced a valid reply.
+- Treat this as delivery-layer logic, not model/output selection logic: if the final assistant reply exists in history but the user never receives it, inspect the transport first.
+
 ### Deferred Event Bodies Must Stay User-Triggered (2026-03-10)
 - If thinking/tool bodies are deferred behind `GET /api/sessions/:sessionId/events/:seq/body`, the frontend should only fetch them when the user explicitly expands the corresponding UI block.
 - Do not auto-hydrate deferred bodies just because a tool exited non-zero or because the session initially rendered; that silently defeats the lazy-loading contract and creates request bursts on session open.
