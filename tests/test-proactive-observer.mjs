@@ -44,8 +44,8 @@ assert.equal(loadedConfig.roomName, 'Living Room')
 assert.equal(loadedConfig.sessionTool, 'codex')
 assert.equal(loadedConfig.appId, 'observer-home')
 assert.equal(loadedConfig.triggers[0].id, 'home-arrival')
-assert.match(loadedConfig.systemPrompt, /arrived home/i)
-assert.match(DEFAULT_SYSTEM_PROMPT, /spoken aloud/i)
+assert.equal(loadedConfig.systemPrompt, '')
+assert.match(DEFAULT_SYSTEM_PROMPT, /Keep connector-specific overrides minimal/i)
 
 const manualArrival = normalizeObserverEvent({
   type: 'arrival',
@@ -83,7 +83,7 @@ const renderedPrompt = buildRemoteLabMessage(loadedConfig, trigger, episode, {
 assert.match(renderedPrompt, /Inbound proactive observer event/i)
 assert.match(renderedPrompt, /Current task:/)
 assert.match(renderedPrompt, /Snapshot path: \/tmp\/snapshot.jpg/)
-assert.match(renderedPrompt, /Reply as speech only/i)
+assert.doesNotMatch(renderedPrompt, /Reply as speech only/i)
 
 let createPayload = null
 const submittedPayloads = []
@@ -183,6 +183,8 @@ try {
 
   assert.equal(createPayload?.appId, 'observer-home')
   assert.equal(createPayload?.appName, 'Home Coach')
+  assert.equal(createPayload?.sourceId, 'observer')
+  assert.equal(createPayload?.sourceName, 'Home Coach')
   assert.equal(createPayload?.group, 'Observer')
   assert.match(createPayload?.externalTriggerId || '', /^observer:home-observer:home-arrival:/)
 

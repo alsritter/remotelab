@@ -40,6 +40,27 @@ function buildEmailRuntimePrompt() {
   ].join('\n');
 }
 
+function buildObserverRuntimePrompt() {
+  return [
+    'You are interacting through a proactive local observer on the user\'s own machine.',
+    'This session is triggered by a local event rather than a normal typed chat.',
+    'Behave like the same RemoteLab executor you would be in ChatUI: if the event or follow-up asks you to inspect, modify, or do a simple local action, do the work before replying when feasible.',
+    'Output only the text that should be spoken aloud through the speaker.',
+    'Keep replies short, natural, warm, and speech-friendly.',
+    'Do not mention hidden connector, session, trigger, or pipeline internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
+function buildGithubRuntimePrompt(session) {
+  const sourceName = trimString(session?.sourceName) || 'GitHub';
+  return [
+    `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
+    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or troubleshoot code, actually do the work before replying.',
+    `Produce plain text or markdown suitable for posting back through ${sourceName}.`,
+    'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
 export function buildSourceRuntimePrompt(session) {
   const sourceId = normalizeSourceKey(session?.sourceId || session?.appId);
   if (sourceId === 'feishu' || sourceId === 'lark') {
@@ -50,6 +71,12 @@ export function buildSourceRuntimePrompt(session) {
   }
   if (sourceId === 'email' || sourceId === 'mail') {
     return buildEmailRuntimePrompt(session);
+  }
+  if (sourceId === 'observer') {
+    return buildObserverRuntimePrompt(session);
+  }
+  if (sourceId === 'github' || sourceId === 'github-ci') {
+    return buildGithubRuntimePrompt(session);
   }
   return '';
 }

@@ -1256,6 +1256,8 @@ async function submitInboundUpdate(
     name: buildSessionName(options.repo, item),
     appId: 'github',
     appName: 'GitHub',
+    sourceId: 'github',
+    sourceName: 'GitHub',
     group: 'GitHub',
     description: buildSessionDescription(options.repo, item, kind),
     systemPrompt: buildSessionSystemPrompt(),

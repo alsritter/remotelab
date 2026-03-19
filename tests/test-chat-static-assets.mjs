@@ -526,6 +526,7 @@ async function main() {
     assert.match(voiceInputAsset.text, /function loadVoiceInputConfig\(/);
     assert.match(voiceInputAsset.text, /voice-transcriptions/);
     assert.match(voiceInputAsset.text, /voiceInputBtn/);
+    assert.match(voiceInputAsset.text, /rewriteWithContext/);
 
     const initAsset = await request(port, 'GET', '/chat/init.js');
     assert.equal(initAsset.status, 200, 'init asset should load');

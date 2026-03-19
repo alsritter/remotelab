@@ -132,6 +132,11 @@ const REPLY_SELF_REPAIR_INTERNAL_OPERATION = 'reply_self_repair';
 const REPLY_SELF_CHECK_REVIEWING_STATUS = 'Assistant self-check: reviewing the latest reply for early stop…';
 const REPLY_SELF_CHECK_ACCEPT_STATUS = 'Assistant self-check: kept the latest reply as-is.';
 const REPLY_SELF_CHECK_DEFAULT_REASON = 'the latest reply left avoidable unfinished work';
+const VOICE_TRANSCRIPT_REWRITE_DEVELOPER_INSTRUCTIONS = [
+  'You are a hidden transcript cleanup worker inside RemoteLab.',
+  'Do not use tools, do not ask follow-up questions, and do not mention internal process.',
+  'Return only the final cleaned transcript text.',
+].join(' ');
 
 const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden context compactor for a user-facing session.',
@@ -1576,7 +1581,7 @@ function summarizeReplySelfCheckReason(value, fallback = REPLY_SELF_CHECK_DEFAUL
   return `${text.slice(0, 157).trimEnd()}…`;
 }
 
-async function runDetachedAssistantPrompt(sessionMeta, prompt) {
+async function runDetachedAssistantPrompt(sessionMeta, prompt, options = {}) {
   const {
     folder,
     tool,
@@ -1591,10 +1596,13 @@ async function runDetachedAssistantPrompt(sessionMeta, prompt) {
 
   const invocation = await createToolInvocation(tool, prompt, {
     dangerouslySkipPermissions: true,
-    model,
-    effort,
-    thinking,
-    systemPrefix: '',
+    model: options.model ?? model,
+    effort: options.effort ?? effort,
+    thinking: options.thinking ?? thinking,
+    systemPrefix: Object.prototype.hasOwnProperty.call(options, 'systemPrefix')
+      ? options.systemPrefix
+      : '',
+    developerInstructions: options.developerInstructions,
   });
   const resolvedCmd = await resolveCommand(invocation.command);
   const resolvedFolder = resolveCwd(folder);
@@ -1633,6 +1641,142 @@ async function runDetachedAssistantPrompt(sessionMeta, prompt) {
       resolve(raw);
     });
   });
+}
+
+function normalizeVoiceTranscriptRewriteText(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+function clipVoiceTranscriptRewriteText(value, maxChars = 1200) {
+  const text = normalizeVoiceTranscriptRewriteText(value);
+  if (!text) return '';
+  if (text.length <= maxChars) return text;
+  const headChars = Math.max(1, Math.floor(maxChars * 0.65));
+  const tailChars = Math.max(1, maxChars - headChars);
+  return `${text.slice(0, headChars).trimEnd()}\n[… clipped …]\n${text.slice(-tailChars).trimStart()}`;
+}
+
+function buildVoiceTranscriptRewriteContext(events, options = {}) {
+  const maxMessages = Number.isInteger(options.maxMessages) && options.maxMessages > 0
+    ? options.maxMessages
+    : 8;
+  const maxChars = Number.isInteger(options.maxChars) && options.maxChars > 0
+    ? options.maxChars
+    : 5000;
+  const messages = [];
+
+  for (const event of events || []) {
+    if (event?.type !== 'message') continue;
+    if (event.role !== 'user' && event.role !== 'assistant') continue;
+    const content = clipVoiceTranscriptRewriteText(event.content || '', 1200);
+    if (!content) continue;
+    messages.push(`${event.role === 'assistant' ? 'Assistant' : 'User'}: ${content}`);
+  }
+
+  if (messages.length === 0) return '';
+
+  const selected = [];
+  let totalChars = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const nextChars = message.length + (selected.length > 0 ? 2 : 0);
+    if (selected.length > 0 && (selected.length >= maxMessages || totalChars + nextChars > maxChars)) {
+      break;
+    }
+    selected.unshift(message);
+    totalChars += nextChars;
+  }
+  return selected.join('\n\n');
+}
+
+function buildVoiceTranscriptRewritePrompt(sessionMeta, transcript, contextText, options = {}) {
+  return [
+    'You are cleaning up automatic speech recognition text for a RemoteLab chat composer.',
+    'Rewrite the raw transcript into the message the speaker most likely intended, using the session context only to disambiguate names, terms, and obvious ASR mistakes.',
+    'Keep the same meaning, tone, and request.',
+    'Do not add any new facts, steps, or conclusions that are not already supported by the raw transcript or the session context.',
+    'If something is uncertain, stay close to the raw transcript instead of guessing.',
+    'Keep the result concise and chat-ready.',
+    'Return only the final rewritten transcript.',
+    '',
+    options.language ? `Language hint: ${options.language}` : '',
+    sessionMeta?.name ? `Session name: ${sessionMeta.name}` : '',
+    sessionMeta?.group ? `Session group: ${sessionMeta.group}` : '',
+    sessionMeta?.description ? `Session description: ${sessionMeta.description}` : '',
+    sessionMeta?.appName ? `Session app: ${sessionMeta.appName}` : '',
+    sessionMeta?.sourceName ? `Session source: ${sessionMeta.sourceName}` : '',
+    sessionMeta?.folder ? `Working folder: ${sessionMeta.folder}` : '',
+    contextText ? `Recent session context:\n${contextText}` : 'Recent session context: [none]',
+    '',
+    'Raw ASR transcript:',
+    transcript,
+    '',
+    'Final rewritten transcript:',
+  ].filter(Boolean).join('\n');
+}
+
+function normalizeVoiceTranscriptRewriteOutput(value) {
+  let text = normalizeVoiceTranscriptRewriteText(value);
+  if (!text) return '';
+  text = text
+    .replace(/^```[a-z0-9_-]*\n?/i, '')
+    .replace(/\n?```$/i, '')
+    .replace(/^(final rewritten transcript|rewritten transcript|transcript)\s*:\s*/i, '')
+    .trim();
+  const quotedMatch = text.match(/^["“](.*)["”]$/s);
+  if (quotedMatch?.[1]) {
+    text = quotedMatch[1].trim();
+  }
+  return text;
+}
+
+export async function rewriteVoiceTranscriptForSession(sessionId, transcript, options = {}) {
+  const rawTranscript = normalizeVoiceTranscriptRewriteText(transcript);
+  if (!rawTranscript) {
+    return {
+      transcript: '',
+      changed: false,
+      skipped: 'empty_transcript',
+    };
+  }
+
+  const sessionMeta = await findSessionMeta(sessionId);
+  if (!sessionMeta?.tool) {
+    return {
+      transcript: rawTranscript,
+      changed: false,
+      skipped: 'session_tool_unavailable',
+    };
+  }
+
+  const history = await loadHistory(sessionId, { includeBodies: true });
+  const contextText = buildVoiceTranscriptRewriteContext(history, {
+    maxMessages: 8,
+    maxChars: 5000,
+  });
+  const rewritten = normalizeVoiceTranscriptRewriteOutput(await runDetachedAssistantPrompt({
+    ...sessionMeta,
+    effort: 'low',
+    thinking: false,
+  }, buildVoiceTranscriptRewritePrompt(sessionMeta, rawTranscript, contextText, options), {
+    developerInstructions: VOICE_TRANSCRIPT_REWRITE_DEVELOPER_INSTRUCTIONS,
+    systemPrefix: '',
+  }));
+
+  if (!rewritten) {
+    return {
+      transcript: rawTranscript,
+      changed: false,
+      skipped: 'empty_rewrite',
+    };
+  }
+
+  return {
+    transcript: rewritten,
+    changed: rewritten !== rawTranscript,
+    tool: sessionMeta.tool,
+    model: sessionMeta.model || '',
+  };
 }
 
 async function findLatestUserMessageForRun(sessionId, runId) {

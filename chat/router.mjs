@@ -32,6 +32,7 @@ import {
   getSessionTimelineEvents,
   listSessions,
   renameSession,
+  rewriteVoiceTranscriptForSession,
   saveSessionAsTemplate,
   sendMessage,
   setSessionArchived,
@@ -288,6 +289,7 @@ async function readVoiceInputPayload(req, pathname) {
       audio,
       language: typeof payload?.language === 'string' ? payload.language.trim() : '',
       persistAudio: payload?.persistAudio !== false,
+      rewriteWithContext: payload?.rewriteWithContext === true,
     };
   }
 
@@ -317,6 +319,7 @@ async function readVoiceInputPayload(req, pathname) {
     audio,
     language: parseFormString(formData.get('language')),
     persistAudio: parseFormString(formData.get('persistAudio')) !== 'false',
+    rewriteWithContext: parseFormString(formData.get('rewriteWithContext')) === 'true',
   };
 }
 
@@ -1553,11 +1556,28 @@ export async function handleRequest(req, res) {
         const transcription = await transcribeVoiceInputAudio(payload.audio, {
           language: payload.language,
         });
+        let transcript = transcription.transcript;
+        let rewriteApplied = false;
+        if (payload.rewriteWithContext && transcript) {
+          try {
+            const rewritten = await rewriteVoiceTranscriptForSession(sessionId, transcript, {
+              language: transcription.language,
+            });
+            if (typeof rewritten?.transcript === 'string' && rewritten.transcript.trim()) {
+              rewriteApplied = rewritten.changed === true;
+              transcript = rewritten.transcript.trim();
+            }
+          } catch (error) {
+            console.warn(`[voice-input] transcript rewrite failed for ${sessionId.slice(0, 8)}: ${error?.message || error}`);
+          }
+        }
         const savedAttachment = payload.persistAudio === false
           ? null
           : (await saveAttachments([payload.audio]))[0] || null;
         writeJson(res, 200, {
-          transcript: transcription.transcript,
+          transcript,
+          ...(rewriteApplied ? { rawTranscript: transcription.transcript } : {}),
+          rewriteApplied,
           durationMs: transcription.durationMs,
           language: transcription.language,
           modelLabel: transcription.modelLabel,

@@ -90,6 +90,38 @@ assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned f
 assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
 assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
 
+const observerSourcePrompt = await buildPrompt(
+  'session-test-4',
+  {
+    ...baseSession,
+    sourceId: 'observer',
+    sourceName: 'Home Coach',
+  },
+  'Current task:\nWelcome the user home.',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(observerSourcePrompt, /Output only the text that should be spoken aloud through the speaker/);
+
+const githubSourcePrompt = await buildPrompt(
+  'session-test-5',
+  {
+    ...baseSession,
+    sourceId: 'github',
+    sourceName: 'GitHub',
+  },
+  'Source: GitHub\n\nUser message:\nPlease inspect the failure.',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(githubSourcePrompt, /Produce plain text or markdown suitable for posting back through GitHub/);
+
 const microAgentPrompt = await buildPrompt(
   'session-test-2',
   baseSession,

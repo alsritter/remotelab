@@ -315,6 +315,8 @@ try {
   assert.equal(sessionCreates.length, 1, 'session should be created exactly once');
   assert.equal(messageCreates.length, 1, 'repair message should be submitted once');
   assert.equal(sessionCreates[0].appId, 'github-ci');
+  assert.equal(sessionCreates[0].sourceId, 'github-ci');
+  assert.equal(sessionCreates[0].sourceName, 'GitHub CI');
   assert.equal(sessionCreates[0].externalTriggerId, 'github-ci:owner/repo:run/101');
   assert.match(messageCreates[0].requestId, /^github-ci:owner__repo:main:ci:101$/);
   assert.match(messageCreates[0].text, /https:\/\/github.com\/owner\/repo\/actions\/runs\/101/);

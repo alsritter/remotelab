@@ -115,12 +115,16 @@ function setupTempHome(voiceWsPort) {
   writeFileSync(
     join(localBin, 'fake-codex'),
     `#!/usr/bin/env node
+const prompt = process.argv.slice(2).join(' ');
+const transcript = prompt.includes('Raw ASR transcript:') && prompt.includes('请帮我把那个服务重起一下')
+  ? '请帮我把 RemoteLab 服务重启一下'
+  : 'voice received';
 setTimeout(() => {
   console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-voice-test' }));
   console.log(JSON.stringify({ type: 'turn.started' }));
   console.log(JSON.stringify({
     type: 'item.completed',
-    item: { type: 'agent_message', text: 'voice received' }
+    item: { type: 'agent_message', text: transcript }
   }));
   console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
 }, 30);
@@ -191,11 +195,11 @@ function startMockVoiceProvider(port) {
         audio_info: { duration: 920 },
         result: {
           additions: { log_id: 'mock-log-id' },
-          text: '这是一条语音测试',
+          text: '请帮我把那个服务重起一下',
           utterances: [
             {
               definite: true,
-              text: '这是一条语音测试',
+              text: '请帮我把那个服务重起一下',
             },
           ],
         },
@@ -209,7 +213,7 @@ async function createSession(port) {
   const res = await request(port, 'POST', '/api/sessions', {
     folder: repoRoot,
     tool: 'fake-codex',
-    name: 'Voice input session',
+    name: 'RemoteLab voice input session',
   });
   assert.equal(res.status, 201, 'session should be created');
   return res.json.session;
@@ -250,9 +254,25 @@ try {
     persistAudio: true,
   });
   assert.equal(transcriptionRes.status, 200, 'voice transcription should succeed');
-  assert.equal(transcriptionRes.json.transcript, '这是一条语音测试');
+  assert.equal(transcriptionRes.json.transcript, '请帮我把那个服务重起一下');
+  assert.equal(transcriptionRes.json.rewriteApplied, false, 'raw transcription should not rewrite unless explicitly requested');
   assert.equal(transcriptionRes.json.attachment.originalName, 'voice.wav');
   assert.match(transcriptionRes.json.attachment.filename || '', /\.wav$/, 'saved audio should keep a wav extension');
+
+  const rewrittenRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {
+    audio: {
+      data: Buffer.from('fake-wave-audio').toString('base64'),
+      mimeType: 'audio/wav',
+      originalName: 'voice.wav',
+    },
+    persistAudio: false,
+    rewriteWithContext: true,
+  });
+  assert.equal(rewrittenRes.status, 200, 'voice transcription rewrite should succeed');
+  assert.equal(rewrittenRes.json.transcript, '请帮我把 RemoteLab 服务重启一下');
+  assert.equal(rewrittenRes.json.rawTranscript, '请帮我把那个服务重起一下');
+  assert.equal(rewrittenRes.json.rewriteApplied, true, 'rewrite flag should be reported when the transcript changes');
+  assert.equal(rewrittenRes.json.attachment, null, 'rewrite-only request should skip attachment persistence when disabled');
 
   const messageRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/messages`, {
     text: transcriptionRes.json.transcript,
@@ -270,7 +290,7 @@ try {
     return (res.json.events || []).find((event) => event.type === 'message' && event.role === 'user') || false;
   }, 'user message with saved voice attachment');
 
-  assert.equal(userMessage.content, '这是一条语音测试');
+  assert.equal(userMessage.content, '请帮我把那个服务重起一下');
   assert.equal(userMessage.images?.length, 1, 'user message should keep the saved voice attachment');
   assert.equal(userMessage.images[0].mimeType, 'audio/wav');
   assert.equal(userMessage.images[0].originalName, 'voice.wav');

@@ -9,6 +9,7 @@ const VOICE_INPUT_PREFS_KEY = "voiceInputPrefs";
 const DEFAULT_VOICE_INPUT_PREFS = Object.freeze({
   attachOriginalAudio: true,
   autoSend: false,
+  rewriteWithContext: true,
 });
 
 const voiceState = {
@@ -43,6 +44,7 @@ function readVoiceInputPrefs() {
     return {
       attachOriginalAudio: raw?.attachOriginalAudio !== false,
       autoSend: raw?.autoSend === true,
+      rewriteWithContext: raw?.rewriteWithContext !== false,
     };
   } catch {
     return { ...DEFAULT_VOICE_INPUT_PREFS };
@@ -53,6 +55,7 @@ function writeVoiceInputPrefs(nextPrefs = {}) {
   const prefs = {
     attachOriginalAudio: nextPrefs.attachOriginalAudio !== false,
     autoSend: nextPrefs.autoSend === true,
+    rewriteWithContext: nextPrefs.rewriteWithContext !== false,
   };
   localStorage.setItem(VOICE_INPUT_PREFS_KEY, JSON.stringify(prefs));
   return prefs;
@@ -244,6 +247,7 @@ async function submitVoiceAudio(file) {
     formData.set("audio", file, file?.name || "voice-input");
     if (voiceState.config?.language) formData.set("language", voiceState.config.language);
     formData.set("persistAudio", prefs.attachOriginalAudio ? "true" : "false");
+    formData.set("rewriteWithContext", prefs.rewriteWithContext ? "true" : "false");
     const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/voice-transcriptions`, {
       method: "POST",
       body: formData,
@@ -253,15 +257,19 @@ async function submitVoiceAudio(file) {
     }
     const insertedIntoEmptyComposer = await insertVoiceTranscriptIntoComposer(data?.transcript || "");
     if (prefs.autoSend && insertedIntoEmptyComposer && typeof data?.transcript === "string" && data.transcript.trim() && typeof sendMessage === "function") {
-      setVoiceInputStatus("已转写，正在发送…", { persist: true });
+      setVoiceInputStatus(data?.rewriteApplied ? "已结合当前会话纠偏，正在发送…" : "已转写，正在发送…", { persist: true });
       sendMessage();
       return;
     }
     if (typeof data?.transcript === "string" && data.transcript.trim()) {
       setVoiceInputStatus(
-        prefs.attachOriginalAudio && data?.attachment
-          ? "已转写并附上原音频，可直接发送或先改字。"
-          : "已转写到输入框，可直接发送或先改字。",
+        data?.rewriteApplied
+          ? (prefs.attachOriginalAudio && data?.attachment
+            ? "已结合当前会话纠偏并附上原音频，可直接发送或先改字。"
+            : "已结合当前会话纠偏后放进输入框，可直接发送或先改字。")
+          : (prefs.attachOriginalAudio && data?.attachment
+            ? "已转写并附上原音频，可直接发送或先改字。"
+            : "已转写到输入框，可直接发送或先改字。"),
       );
       return;
     }
@@ -395,7 +403,7 @@ function renderVoiceInputSettings() {
 
   const note = document.createElement("div");
   note.className = "settings-section-note";
-  note.textContent = "Record on phone or desktop, transcribe on the server, and optionally keep the original audio attached to the message.";
+  note.textContent = "Record on phone or desktop, transcribe on the server, optionally clean up the transcript with current session context, and keep the original audio when needed.";
 
   const form = document.createElement("div");
   form.className = "settings-inline-form";
@@ -405,9 +413,11 @@ function renderVoiceInputSettings() {
   const enabledControl = createVoiceSettingsCheckbox("Enable voice input", config.enabled !== false);
   const attachControl = createVoiceSettingsCheckbox("Attach original audio by default", prefs.attachOriginalAudio !== false);
   const autoSendControl = createVoiceSettingsCheckbox("Auto-send when transcript lands in an empty composer", prefs.autoSend === true);
+  const rewriteControl = createVoiceSettingsCheckbox("Use current session context to clean up the transcript", prefs.rewriteWithContext !== false);
   enableRow.appendChild(enabledControl.chip);
   enableRow.appendChild(attachControl.chip);
   enableRow.appendChild(autoSendControl.chip);
+  enableRow.appendChild(rewriteControl.chip);
 
   const appIdInput = document.createElement("input");
   appIdInput.className = "settings-inline-input";
@@ -462,6 +472,7 @@ function renderVoiceInputSettings() {
     const nextPrefs = writeVoiceInputPrefs({
       attachOriginalAudio: attachControl.input.checked,
       autoSend: autoSendControl.input.checked,
+      rewriteWithContext: rewriteControl.input.checked,
     });
     status.textContent = "Saving…";
     saveBtn.disabled = true;
@@ -484,9 +495,13 @@ function renderVoiceInputSettings() {
       });
       voiceState.config = data?.config || voiceState.config;
       accessKeyInput.value = "";
-      status.textContent = nextPrefs.attachOriginalAudio
-        ? "Saved. New recordings keep the original audio attached by default."
-        : "Saved. New recordings only insert transcript text by default.";
+      status.textContent = nextPrefs.rewriteWithContext
+        ? (nextPrefs.attachOriginalAudio
+          ? "Saved. New recordings use session context to clean up the transcript and keep the original audio attached by default."
+          : "Saved. New recordings use session context to clean up the transcript before inserting text.")
+        : (nextPrefs.attachOriginalAudio
+          ? "Saved. New recordings keep the original audio attached by default."
+          : "Saved. New recordings only insert transcript text by default.");
       syncVoiceInputButton();
       renderVoiceInputSettings();
     } catch (error) {

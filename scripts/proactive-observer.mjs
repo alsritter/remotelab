@@ -38,7 +38,7 @@ const DEFAULT_SPEECH_TIMEOUT_MS = 30 * 1000
 const DEFAULT_TTS_TIMEOUT_MS = 2 * 60 * 1000
 const DEFAULT_TTS_RATE = 190
 const DEFAULT_TRIGGER_ID = 'home-arrival'
-const DEFAULT_SYSTEM_PROMPT = [
+const LEGACY_DEFAULT_SYSTEM_PROMPT = [
   'You are the assistant behind a proactive local home observer running on the owner\'s machine.',
   'Each session is triggered by a local event, not by a normal typed chat.',
   'For this prototype, when the user has just arrived home, greet them warmly and briefly.',
@@ -48,6 +48,10 @@ const DEFAULT_SYSTEM_PROMPT = [
   'Reply with the exact text that should be spoken aloud through the speaker.',
   'Keep replies short, natural, warm, and speech-friendly.',
   'Do not mention session ids, trigger ids, pipelines, or hidden system internals.',
+].join('\n')
+const DEFAULT_SYSTEM_PROMPT = [
+  'You are interacting through a proactive local observer on the user\'s own machine.',
+  'Keep connector-specific overrides minimal and only describe constraints not already owned by RemoteLab backend prompt logic.',
 ].join('\n')
 
 function trimString(value) {
@@ -85,6 +89,14 @@ function normalizeBoolean(value, fallback = false) {
     if (['0', 'false', 'no', 'off'].includes(normalized)) return false
   }
   return fallback
+}
+
+function normalizeSystemPrompt(value) {
+  const normalized = trimString(value)
+  if (!normalized || normalized === DEFAULT_SYSTEM_PROMPT || normalized === LEGACY_DEFAULT_SYSTEM_PROMPT) {
+    return ''
+  }
+  return normalized
 }
 
 function sanitizeIdPart(value, fallback = 'default') {
@@ -267,7 +279,7 @@ export async function loadConfig(configPath = DEFAULT_CONFIG_PATH) {
     appId: trimString(normalized.appId || DEFAULT_APP_ID) || DEFAULT_APP_ID,
     appName: trimString(normalized.appName || DEFAULT_APP_NAME) || DEFAULT_APP_NAME,
     group: trimString(normalized.group || DEFAULT_GROUP) || DEFAULT_GROUP,
-    systemPrompt: normalizeMultilineText(normalized.systemPrompt || DEFAULT_SYSTEM_PROMPT),
+    systemPrompt: normalizeSystemPrompt(normalized.systemPrompt),
     maxImageBytes: parsePositiveInteger(normalized.maxImageBytes, DEFAULT_MAX_IMAGE_BYTES),
     camera: normalizeCameraConfig(normalized.camera),
     vision: normalizeVisionConfig(normalized.vision),
@@ -437,14 +449,12 @@ export function buildRemoteLabMessage(runtimeConfig, trigger, episode, event) {
 
   if (event.type === 'transcript') {
     lines.push('', 'User speech:', event.transcript || '(empty)')
-    lines.push('', 'Please respond with the exact spoken reply. If the user requested a simple local action, complete it first when reasonable.')
   }
 
   if (Object.keys(event.metadata || {}).length > 0) {
     lines.push('', `Metadata: ${JSON.stringify(event.metadata)}`)
   }
 
-  lines.push('', 'Reply as speech only.')
   return lines.join('\n')
 }
 
@@ -622,6 +632,8 @@ async function createEpisodeSession(runtime, trigger, episode, event) {
     name: buildSessionName(trigger, event.detectedAt),
     appId: runtime.config.appId,
     appName: runtime.config.appName,
+    sourceId: 'observer',
+    sourceName: runtime.config.appName,
     group: runtime.config.group,
     description: buildSessionDescription(runtime.config, trigger, event),
     systemPrompt: runtime.config.systemPrompt,

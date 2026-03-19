@@ -744,6 +744,8 @@ async function triggerRepairSession(options, runtime, incident) {
     name: buildSessionName(incident.run),
     appId: 'github-ci',
     appName: 'GitHub CI',
+    sourceId: 'github-ci',
+    sourceName: 'GitHub CI',
     group: 'GitHub',
     description: buildSessionDescription(options.repo, incident.run),
     systemPrompt: buildSessionSystemPrompt(),
