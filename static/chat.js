@@ -11,6 +11,8 @@
     "/chat/tooling.js",
     "/chat/realtime.js",
     "/chat/ui.js",
+    "/chat/session-list-ui.js",
+    "/chat/sidebar-ui.js",
     "/chat/compose.js",
     "/chat/gestures.js",
     "/chat/init.js",
