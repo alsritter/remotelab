@@ -1052,12 +1052,11 @@ async function writeSnapshotPage(req, res, shareId, {
   setShareSnapshotHeaders(res, pageNonce);
   try {
     const pageBuildInfo = await getPageBuildInfo();
-    const sharePage = await readFile(chatTemplatePath, 'utf8');
+    const sharePage = await readFile(shareTemplatePath, 'utf8');
     const body = renderPageTemplate(sharePage, pageNonce, {
       ...buildTemplateReplacements(pageBuildInfo),
       ...(snapshot ? buildShareSnapshotPageReplacements(req, shareId, snapshot) : {}),
-      BODY_CLASS: 'visitor-mode share-snapshot-mode',
-      BOOTSTRAP_SCRIPT_TAGS: `<script src="/share-payload/${shareId}.js"></script>`,
+      SHARE_PAYLOAD_URL: `/share-payload/${shareId}.js`,
     });
     writeCachedResponse(req, res, {
       statusCode: 200,

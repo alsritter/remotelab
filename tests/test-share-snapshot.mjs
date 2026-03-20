@@ -250,8 +250,8 @@ async function main() {
   assert.match(publicShareRes.headers['content-security-policy'] || '', /media-src 'self' data: blob:/, 'share page CSP should allow public media playback');
   assert.strictEqual(publicShareRes.headers['referrer-policy'], 'no-referrer', 'share page should suppress referrer leakage');
   assert.match(publicShareRes.body, /<meta name="color-scheme" content="light dark">/);
-  assert.match(publicShareRes.body, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
-  assert.match(publicShareRes.body, /<meta name="theme-color" content="#1e1e1e" media="\(prefers-color-scheme: dark\)">/);
+  assert.match(publicShareRes.body, /<meta name="theme-color" content="#f5f7fb" media="\(prefers-color-scheme: light\)">/);
+  assert.match(publicShareRes.body, /<meta name="theme-color" content="#0b1020" media="\(prefers-color-scheme: dark\)">/);
   assert.match(publicShareRes.body, /<title>Share preview title · Shared Snapshot<\/title>/, 'share page title should expose the shared session name');
   assert.match(publicShareRes.body, /<meta name="description" content="A read-only RemoteLab conversation snapshot\.">/, 'share page should expose a generic preview description');
   assert.match(publicShareRes.body, /<meta property="og:title" content="Share preview title">/, 'share page should expose an OG title for previews');
@@ -260,13 +260,14 @@ async function main() {
   assert.match(publicShareRes.body, /<meta name="twitter:card" content="summary">/, 'share page should expose a compact twitter preview card');
   assert.match(publicShareRes.body, /<meta name="twitter:title" content="Share preview title">/, 'share page should mirror the preview title for twitter cards');
   assert.match(publicShareRes.body, /@media \(prefers-color-scheme: dark\)/);
+  assert.match(publicShareRes.body, /\.hero \{/,'share page should render the dedicated snapshot layout styles');
   assert.match(publicShareRes.body, /\/favicon\.ico\?v=/, 'share page should fingerprint icon URLs for immutable caching');
   assert.match(publicShareRes.body, /\/icon\.svg\?v=/, 'share page should fingerprint svg icon URLs for immutable caching');
   assert.ok(publicShareRes.body.includes(`/share-payload/${shareId}.js`), 'share shell should bootstrap an external payload resource');
   assert.ok(!publicShareRes.body.includes('window.__REMOTELAB_SHARE__ ='), 'share shell should not inline the snapshot payload');
   assert.ok(!publicShareRes.body.includes('Please review this snippet.'), 'share shell should not inline conversation bodies');
-  assert.ok(publicShareRes.body.includes('visitor-mode share-snapshot-mode'), 'share page should preload the chat shell in read-only visitor mode');
-  assert.match(publicShareRes.body, /<textarea id="msgInput"[^>]*disabled>/, 'share page should reuse the normal chat composer shell in a disabled state');
+  assert.match(publicShareRes.body, /<section class="hero">/, 'share page should use the dedicated snapshot hero shell');
+  assert.match(publicShareRes.body, /<div class="messages-inner" id="messagesInner">/, 'share page should render the standalone message list shell');
   assert.ok(!publicShareRes.body.includes('/api/auth/me'), 'share page should not bootstrap owner auth UI');
   assert.ok(!publicShareRes.body.includes('/ws'), 'share page should not connect to live websocket');
   const publicShare304Res = await request('GET', sharePayload.share.url, {
