@@ -8,13 +8,13 @@ const voiceSettingsMount = document.getElementById("voiceSettingsMount");
 const VOICE_INPUT_PREFS_KEY = "voiceInputPrefs";
 const VOICE_INPUT_DIAGNOSTICS_KEY = "voiceInputDiagnostics";
 const VOICE_INPUT_DIAGNOSTICS_LIMIT = 120;
-const VOICE_INPUT_PREFS_VERSION = 4;
+const VOICE_INPUT_PREFS_VERSION = 5;
 const VOICE_CAPTURE_MODE_BROWSER_DIRECT = "browser-direct";
 const VOICE_CAPTURE_MODE_SERVER_RELAY = "server-relay";
 const DEFAULT_VOICE_INPUT_PREFS = Object.freeze({
   captureMode: VOICE_CAPTURE_MODE_SERVER_RELAY,
   attachOriginalAudio: false,
-  autoSend: true,
+  autoSend: false,
   rewriteWithContext: true,
   version: VOICE_INPUT_PREFS_VERSION,
 });
@@ -65,7 +65,7 @@ function normalizeVoiceInputPrefs(raw = {}) {
   return {
     captureMode: normalizeVoiceCaptureMode(raw?.captureMode),
     attachOriginalAudio: raw?.attachOriginalAudio === true,
-    autoSend: raw?.autoSend !== false,
+    autoSend: raw?.autoSend === true,
     rewriteWithContext: raw?.rewriteWithContext !== false,
     version: VOICE_INPUT_PREFS_VERSION,
   };
@@ -78,7 +78,9 @@ function migrateVoiceInputPrefs(raw = {}) {
       ? VOICE_CAPTURE_MODE_SERVER_RELAY
       : raw?.captureMode,
     attachOriginalAudio: raw?.attachOriginalAudio === true,
-    autoSend: raw?.autoSend !== false,
+    autoSend: raw?.version >= VOICE_INPUT_PREFS_VERSION
+      ? raw?.autoSend === true
+      : false,
     rewriteWithContext: raw?.rewriteWithContext !== false,
   });
 }

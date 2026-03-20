@@ -132,9 +132,9 @@ const localStorage = createStorage();
 localStorage.setItem('voiceInputPrefs', JSON.stringify({
   captureMode: 'browser-direct',
   attachOriginalAudio: false,
-  autoSend: true,
+  autoSend: false,
   rewriteWithContext: true,
-  version: 4,
+  version: 5,
 }));
 let voiceInputConfig = {
   enabled: true,
@@ -247,7 +247,8 @@ assert.ok(submitCall, 'stopping browser direct capture should submit the final t
 assert.equal(submitCall.options.method, 'POST');
 assert.equal(submitCall.options.headers['Content-Type'], 'application/json');
 assert.equal(JSON.parse(submitCall.options.body).providedTranscript, '实时字幕测试');
-assert.equal(context.sendMessageCalls, 1, 'empty composer + auto-send should trigger sendMessage');
+assert.equal(context.sendMessageCalls, 0, 'voice transcript should stay in the composer by default');
+assert.equal(context.msgInput.value, '洗过的一句话', 'cleaned transcript should remain in the composer for manual review');
 assert.match(context.window.RemoteLabVoiceInput.getDiagnosticsText(), /Browser direct start requested/, 'browser direct start should be logged');
 assert.match(context.window.RemoteLabVoiceInput.getDiagnosticsText(), /Voice submit completed/, 'final voice submission should be logged');
 
@@ -269,11 +270,12 @@ await context.loadVoiceInputConfig();
 
 const migratedPrefs = context.readVoiceInputPrefs();
 assert.equal(migratedPrefs.captureMode, 'server-relay', 'legacy browser-direct default should migrate back to server relay');
+assert.equal(migratedPrefs.autoSend, false, 'legacy prefs should now default to manual send for safer testing');
 assert.equal(migratedPrefs.rewriteWithContext, false, 'legacy prefs should preserve the other toggles');
 assert.equal(context.resolveVoiceCaptureMode(migratedPrefs), 'server-relay', 'configured relay should become the active capture mode after migration');
 
 const storedPrefs = JSON.parse(localStorage.getItem('voiceInputPrefs'));
-assert.equal(storedPrefs.version, 4, 'migrated prefs should be rewritten at the latest version');
+assert.equal(storedPrefs.version, 5, 'migrated prefs should be rewritten at the latest version');
 assert.equal(storedPrefs.captureMode, 'server-relay', 'migrated prefs should persist the repaired default');
 
 console.log('test-voice-input-browser-direct: ok');
