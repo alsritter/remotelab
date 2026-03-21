@@ -87,6 +87,23 @@ Prefer one Feishu-console visit that covers app creation, permissions, event sub
 - keep the rollout inside this conversation; when a console fix is required, pause with a precise `[HUMAN]` instruction
 - if V0 succeeds, optionally suggest widening availability or switching from `allow_all` to `whitelist`
 
+## Fast operator commands
+
+Use the built-in ops wrapper when you need a short, repeatable troubleshooting loop instead of ad-hoc shell steps.
+
+```bash
+npm run feishu:ops -- status
+npm run feishu:ops -- restart
+npm run feishu:ops -- backfill --count 2 --tool micro-agent --model gpt-5.4 --effort low
+```
+
+Notes:
+
+- `status` shows the active runtime, whether the connector process is up, the latest inbound event, and recent text messages that were recorded as `silent_no_reply`
+- `restart` prefers the installed `launchd` agent when present and otherwise falls back to the local instance script
+- `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
+- if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
+
 ## Config contract
 
 ```json
