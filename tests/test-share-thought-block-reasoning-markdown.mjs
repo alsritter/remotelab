@@ -7,12 +7,12 @@ import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
-const shareSource = readFileSync(join(repoRoot, 'static', 'share.js'), 'utf8');
+const chatUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'ui.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
   const start = source.indexOf(marker);
-  assert.notEqual(start, -1, `${functionName} should exist in share.js`);
+  assert.notEqual(start, -1, `${functionName} should exist in static/chat/ui.js`);
   const paramsStart = source.indexOf('(', start);
   assert.notEqual(paramsStart, -1, `${functionName} should have parameters`);
   let paramsDepth = 0;
@@ -56,9 +56,10 @@ function makeElement(tagName = 'div') {
   };
 }
 
-const renderReasoningSource = extractFunctionSource(shareSource, 'renderReasoning');
+const renderReasoningIntoSource = extractFunctionSource(chatUiSource, 'renderReasoningInto');
 const container = makeElement('div');
-const parseCalls = [];
+const markdownCalls = [];
+const lazyCalls = [];
 const context = {
   console,
   document: {
@@ -66,39 +67,38 @@ const context = {
       return makeElement(tagName);
     },
   },
-  getThinkingBody() {
-    return container;
+  renderMarkdownIntoNode(node, markdown) {
+    markdownCalls.push(markdown);
+    node.innerHTML = `<p>${markdown}</p>`;
+    node.renderedMarkdown = markdown;
+    return true;
   },
-  marked: {
-    parse(markdown) {
-      parseCalls.push(markdown);
-      return `<p>${markdown}</p>`;
-    },
+  markLazyEventBodyNode(node, evt, options) {
+    lazyCalls.push({ node, evt, options });
+    return false;
   },
-  sanitizeRenderedContent(node) {
-    node.sanitized = true;
-  },
-  enhanceCodeBlocks(node) {
-    node.enhanced = true;
-  },
+  queueHydrateLazyNodes() {},
 };
 context.globalThis = context;
 
 vm.runInNewContext(
   [
-    renderReasoningSource,
-    'globalThis.renderReasoning = renderReasoning;',
+    renderReasoningIntoSource,
+    'globalThis.renderReasoningInto = renderReasoningInto;',
   ].join('\n\n'),
   context,
-  { filename: 'static/share.js' },
+  { filename: 'static/chat/ui.js' },
 );
 
-context.renderReasoning({ content: '**Inspecting**\n\n- item one' });
+const rendered = context.renderReasoningInto(container, {
+  content: '**Inspecting**\n\n- item one',
+});
 
-assert.equal(parseCalls.length, 1, 'share thought reasoning should render through markdown');
+assert.equal(markdownCalls.length, 1, 'share thought reasoning should render through markdown');
 assert.equal(container.children.length, 1, 'share thought reasoning should append one node');
-assert.equal(container.children[0].className, 'reasoning msg-assistant', 'share thought reasoning should reuse markdown-capable assistant styles');
-assert.equal(container.children[0].sanitized, true, 'share reasoning should sanitize rendered markdown');
-assert.equal(container.children[0].enhanced, true, 'share reasoning should still enhance markdown code blocks');
+assert.equal(rendered, container.children[0], 'share thought reasoning should return the rendered node');
+assert.equal(container.children[0].className, 'reasoning md-content', 'share thought reasoning should reuse the main chat markdown styles');
+assert.equal(container.children[0].renderedMarkdown, '**Inspecting**\n\n- item one', 'share thought reasoning should pass markdown through the chat renderer');
+assert.equal(lazyCalls.length, 1, 'share thought reasoning should preserve lazy-body wiring');
 
 console.log('test-share-thought-block-reasoning-markdown: ok');

@@ -203,11 +203,9 @@ This layer should stay comparatively thin and avoid absorbing product policy.
 Responsible for rendering HTTP-derived state in an endpoint-flexible UI that works well on phone and desktop.
 
 - `templates/chat.html`
-- `templates/share.html`
 - `templates/login.html`
 - `static/chat/`
 - `static/chat.js` (compatibility loader)
-- `static/share.js`
 - `static/sw.js`
 
 Important: the frontend is **vanilla JS** with **no build step**.
@@ -588,7 +586,7 @@ The flow is:
 1. load the live session + normalized history
 2. sanitize events and inline image data where needed
 3. write an immutable snapshot file
-4. render it via `templates/share.html` + `static/share.js`
+4. render it via `templates/chat.html` in `shareSnapshotMode`, hydrated by `/share-payload/:id.js`
 
 The shared page is intentionally read-only and more tightly sandboxed than the main app.
 
@@ -703,15 +701,16 @@ The main chat frontend (`static/chat/`, loaded by `static/chat.js`) is responsib
 - rendering the session-first board / workflow projection
 - registering push notifications
 
-### 10.4 Share page frontend
+### 10.4 Share snapshot frontend
 
-`static/share.js` is a separate read-only renderer.
+Share snapshots reuse the main chat shell (`templates/chat.html` + `static/chat/`) with `shareSnapshotMode` bootstrapped from `/share-payload/:id.js`.
 
-It additionally:
+That mode additionally:
 
-- sanitizes rendered markdown aggressively
-- strips `<private>` / `<hide>` content from shared output
-- adds code-copy affordances
+- hides sidebar/session-management UI via visitor-mode layout rules
+- disables live auth/bootstrap and websocket attachment
+- renders frozen snapshot events through the same chat timeline components
+- keeps `<private>` / `<hide>` content filtered out before publication
 
 ---
 
@@ -867,7 +866,7 @@ Use this as the practical code-finding guide.
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
 | session labeling / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
 | App templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
-| share snapshots | `chat/shares.mjs`, `templates/share.html`, `static/share.js` |
+| share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
 | model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
 | pointer-first memory startup | `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md` |

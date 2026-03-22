@@ -98,9 +98,8 @@ remotelab/
 │   └── manifest.json        # PWA metadata
 │
 ├── templates/               # ── HTML templates ──
-│   ├── chat.html            # Chat UI (primary, 765 lines)
+│   ├── chat.html            # Chat UI shell (primary, also reused for shared snapshots)
 │   ├── login.html           # Login page (194 lines)
-│   └── share.html           # Read-only shared snapshot view
 │
 ├── docs/                    # User-facing documentation
 ├── notes/                   # Internal design & product thinking
