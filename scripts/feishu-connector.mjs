@@ -1836,7 +1836,9 @@ async function main() {
   console.log(`[feishu-connector] handled messages: ${storagePaths.handledMessagesPath}`);
   console.log(`[feishu-connector] RemoteLab base URL: ${config.chatBaseUrl}`);
   console.log(`[feishu-connector] session folder: ${config.sessionFolder}`);
-  console.log(`[feishu-connector] session tool: ${config.sessionTool}`);
+  console.log(
+    `[feishu-connector] runtime selection: mode=${config.runtimeSelectionMode} fallbackTool=${config.sessionTool} fallbackModel=${config.model || '(default)'} fallbackEffort=${config.effort || '(default)'} fallbackThinking=${config.thinking ? 'on' : 'off'}`,
+  );
 
   if (options.replayLast) {
     const summary = await loadLatestReplayableSummary(storagePaths.eventsLogPath);
