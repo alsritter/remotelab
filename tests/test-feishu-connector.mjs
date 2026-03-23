@@ -391,13 +391,18 @@ assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backe
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
 assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
-  emojiType: 'SMILE',
+  emojiType: 'FINGERHEART',
   removeOnCompletion: false,
 }, 'processing reactions should default to disabled');
 
 assert.deepEqual(normalizeProcessingReactionConfig(true), {
   enabled: true,
-  emojiType: 'SMILE',
+  emojiType: 'FINGERHEART',
+  removeOnCompletion: false,
+});
+assert.deepEqual(normalizeProcessingReactionConfig('fingerheart'), {
+  enabled: true,
+  emojiType: 'FINGERHEART',
   removeOnCompletion: false,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
