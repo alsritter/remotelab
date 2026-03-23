@@ -8,13 +8,19 @@ import { pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import {
+  normalizeExternalRuntimeSelectionMode,
+  resolveExternalRuntimeSelection,
+} from '../lib/external-runtime-selection.mjs';
 import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
+import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
 const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SESSION_TOOL = 'codex';
+const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT = [
   'You are replying as a Feishu bot powered by RemoteLab on the user\'s own machine.',
   'For each assistant turn, output exactly the plain-text message to send back to Feishu.',
@@ -115,6 +121,7 @@ Config shape:
     "loggerLevel": "info",
     "chatBaseUrl": "${DEFAULT_CHAT_BASE_URL}",
     "sessionFolder": "${homedir()}",
+    "runtimeSelectionMode": "${DEFAULT_RUNTIME_SELECTION_MODE}",
     "sessionTool": "${DEFAULT_SESSION_TOOL}",
     "model": "",
     "effort": "",
@@ -395,6 +402,7 @@ async function loadConfig(pathname) {
     storeRawEvents: parsed?.storeRawEvents === true,
     chatBaseUrl: normalizeBaseUrl(parsed?.chatBaseUrl || DEFAULT_CHAT_BASE_URL),
     sessionFolder: trimString(parsed?.sessionFolder) || homedir(),
+    runtimeSelectionMode: normalizeExternalRuntimeSelectionMode(parsed?.runtimeSelectionMode, DEFAULT_RUNTIME_SELECTION_MODE),
     sessionTool: trimString(parsed?.sessionTool) || DEFAULT_SESSION_TOOL,
     model: trimString(parsed?.model),
     effort: trimString(parsed?.effort),
@@ -979,32 +987,55 @@ function renderMentionPreview(text, mentions) {
   return rendered;
 }
 
-function buildMentionPrompt(summary) {
-  const mentions = Array.isArray(summary?.mentions) ? summary.mentions : [];
-  if (!mentions.length) return [];
-  return [
-    '',
-    'If you need to mention someone in your reply, use these exact tokens:',
-    ...mentions.map((mention) => {
-      const token = trimString(mention?.key);
-      if (!token) return '';
-      return `- @${mentionDisplayName(mention)} => ${token}`;
-    }),
-    'Do not invent new mention tokens.',
-  ];
-}
-
 function buildRemoteLabMessage(summary) {
   const rawMessage = trimString(summary.textPreview);
   const renderedMessage = renderMentionPreview(rawMessage, summary.mentions);
   const displayMessage = renderedMessage || rawMessage || trimString(summary.contentSummary) || '[non-text or empty message]';
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
   const senderPrefix = summary?.chatType === 'group' && senderName ? `${senderName}: ` : '';
-  return [
-    summary?.chatType === 'group' ? 'Group chat.' : '',
-    `${senderPrefix}${displayMessage}`,
-    ...buildMentionPrompt(summary),
-  ].filter(Boolean).join('\n');
+  return `${senderPrefix}${displayMessage}`;
+}
+
+function buildSessionSourceContext(summary) {
+  const context = {
+    connector: 'feishu',
+    chatType: trimString(summary?.chatType),
+    chatId: trimString(summary?.chatId),
+  };
+  const chatName = trimString(summary?.chatName);
+  if (chatName) context.chatName = chatName;
+  return context;
+}
+
+function buildMessageSourceContext(summary) {
+  const context = {
+    connector: 'feishu',
+    messageId: trimString(summary?.messageId),
+    chatType: trimString(summary?.chatType),
+  };
+  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
+  if (senderName) {
+    context.sender = { name: senderName };
+  }
+  const mentions = (Array.isArray(summary?.mentions) ? summary.mentions : [])
+    .map((mention) => {
+      const name = mentionDisplayName(mention);
+      const token = trimString(mention?.key);
+      if (!name && !token) return null;
+      return {
+        ...(name ? { name } : {}),
+        ...(token ? { token } : {}),
+      };
+    })
+    .filter(Boolean);
+  if (mentions.length > 0) {
+    context.mentions = mentions;
+  }
+  const contentSummary = trimString(summary?.contentSummary);
+  if (contentSummary) {
+    context.contentSummary = contentSummary;
+  }
+  return context;
 }
 
 async function readOwnerToken() {
@@ -1205,11 +1236,11 @@ async function requestRemoteLab(runtime, path, options = {}) {
   return result;
 }
 
-async function createOrReuseSession(runtime, summary) {
+async function createOrReuseSession(runtime, summary, runtimeSelection) {
   const sourceName = runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu';
   const payload = {
     folder: runtime.config.sessionFolder,
-    tool: runtime.config.sessionTool,
+    tool: runtimeSelection.tool,
     name: buildSessionName(summary),
     appId: REMOTELAB_SESSION_APP_ID,
     appName: sourceName,
@@ -1219,6 +1250,7 @@ async function createOrReuseSession(runtime, summary) {
     description: buildSessionDescription(summary),
     systemPrompt: runtime.config.systemPrompt,
     externalTriggerId: buildExternalTriggerId(summary),
+    sourceContext: buildSessionSourceContext(summary),
   };
   const result = await requestRemoteLab(runtime, '/api/sessions', {
     method: 'POST',
@@ -1230,15 +1262,16 @@ async function createOrReuseSession(runtime, summary) {
   return result.json.session;
 }
 
-async function submitRemoteLabMessage(runtime, sessionId, summary) {
+async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelection) {
   const payload = {
     requestId: buildRequestId(summary),
     text: buildRemoteLabMessage(summary),
-    tool: runtime.config.sessionTool,
-    thinking: runtime.config.thinking === true,
+    tool: runtimeSelection.tool,
+    sourceContext: buildMessageSourceContext(summary),
   };
-  if (runtime.config.model) payload.model = runtime.config.model;
-  if (runtime.config.effort) payload.effort = runtime.config.effort;
+  if (runtimeSelection.thinking) payload.thinking = true;
+  if (runtimeSelection.model) payload.model = runtimeSelection.model;
+  if (runtimeSelection.effort) payload.effort = runtimeSelection.effort;
 
   const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}/messages`, {
     method: 'POST',
@@ -1274,9 +1307,25 @@ async function waitForRunCompletion(runtime, runId) {
   throw new Error(`run timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
 }
 
+async function resolveFeishuRuntimeSelection(runtime) {
+  const uiSelection = await loadUiRuntimeSelection();
+  return resolveExternalRuntimeSelection({
+    uiSelection,
+    mode: runtime?.config?.runtimeSelectionMode || DEFAULT_RUNTIME_SELECTION_MODE,
+    fallback: {
+      tool: runtime?.config?.sessionTool || DEFAULT_SESSION_TOOL,
+      model: runtime?.config?.model || '',
+      effort: runtime?.config?.effort || '',
+      thinking: runtime?.config?.thinking === true,
+    },
+    defaultTool: DEFAULT_SESSION_TOOL,
+  });
+}
+
 async function generateRemoteLabReply(runtime, summary) {
-  const session = await createOrReuseSession(runtime, summary);
-  const submission = await submitRemoteLabMessage(runtime, session.id, summary);
+  const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
+  const session = await createOrReuseSession(runtime, summary, runtimeSelection);
+  const submission = await submitRemoteLabMessage(runtime, session.id, summary, runtimeSelection);
   await waitForRunCompletion(runtime, submission.runId);
   const replyEvent = await loadAssistantReply(
     (path) => requestRemoteLab(runtime, path),
@@ -1309,12 +1358,24 @@ function escapeFeishuMentionValue(value) {
 
 function compileFeishuReplyText(text, mentions) {
   let compiled = normalizeReplyText(text);
-  for (const mention of Array.isArray(mentions) ? mentions : []) {
-    const token = trimString(mention?.key);
-    const targetId = resolveMentionTargetId(mention);
-    if (!token || !targetId) continue;
+  const normalizedMentions = (Array.isArray(mentions) ? mentions : [])
+    .map((mention) => ({
+      mention,
+      token: trimString(mention?.key),
+      targetId: resolveMentionTargetId(mention),
+      displayName: mentionDisplayName(mention),
+    }))
+    .filter((entry) => entry.targetId && (entry.token || entry.displayName));
+  for (const { mention, token, targetId } of normalizedMentions.sort((left, right) => right.token.length - left.token.length)) {
+    if (!token) continue;
     const tag = `<at user_id="${escapeFeishuMentionValue(targetId)}">${escapeFeishuMentionValue(mentionDisplayName(mention))}</at>`;
     compiled = compiled.split(token).join(tag);
+  }
+  for (const { mention, displayName, targetId } of normalizedMentions.sort((left, right) => right.displayName.length - left.displayName.length)) {
+    if (!displayName) continue;
+    const alias = `@${displayName}`;
+    const tag = `<at user_id="${escapeFeishuMentionValue(targetId)}">${escapeFeishuMentionValue(mentionDisplayName(mention))}</at>`;
+    compiled = compiled.split(alias).join(tag);
   }
   return compiled;
 }

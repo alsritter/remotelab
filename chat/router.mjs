@@ -29,6 +29,7 @@ import {
   saveAttachments,
   getSession,
   getSessionEventsAfter,
+  getSessionSourceContext,
   getSessionTimelineEvents,
   listSessions,
   renameSession,
@@ -273,6 +274,7 @@ async function readSessionMessagePayload(req, pathname) {
     model: parseFormString(formData.get('model')),
     effort: parseFormString(formData.get('effort')),
     thinking: parseFormString(formData.get('thinking')) === 'true',
+    sourceContext: parseFormJson(parseFormString(formData.get('sourceContext')), null),
     images,
   };
 }
@@ -1380,6 +1382,20 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (sessionGetRoute?.kind === 'source-context') {
+    const { sessionId } = sessionGetRoute;
+    if (!requireSessionAccess(res, authSession, sessionId)) return;
+    const sourceContext = await getSessionSourceContext(sessionId, {
+      requestId: typeof parsedUrl.query.requestId === 'string' ? parsedUrl.query.requestId : '',
+    });
+    if (!sourceContext) {
+      writeJson(res, 404, { error: 'Session not found' });
+      return;
+    }
+    writeJson(res, 200, { sessionId, sourceContext });
+    return;
+  }
+
   if (sessionGetRoute?.kind === 'event-block') {
     const {
       sessionId,
@@ -1617,6 +1633,7 @@ export async function handleRequest(req, res) {
           thinking: authSession?.role === 'visitor' ? false : !!payload.thinking,
           model: authSession?.role === 'visitor' ? undefined : payload.model || undefined,
           effort: authSession?.role === 'visitor' ? undefined : payload.effort || undefined,
+          sourceContext: authSession?.role === 'visitor' ? undefined : payload.sourceContext,
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };
         const outcome = requestId
@@ -1944,6 +1961,7 @@ export async function handleRequest(req, res) {
       throw err;
     }
     try {
+      const payload = JSON.parse(body);
       const {
         folder,
         tool,
@@ -1959,7 +1977,8 @@ export async function handleRequest(req, res) {
         systemPrompt,
         completionTargets,
         externalTriggerId,
-      } = JSON.parse(body);
+        sourceContext,
+      } = payload;
       if (!folder || !tool) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'folder and tool are required' }));
@@ -2009,8 +2028,11 @@ export async function handleRequest(req, res) {
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       };
-      if (Object.prototype.hasOwnProperty.call(body, 'systemPrompt')) {
+      if (Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
         createOptions.systemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
+        createOptions.sourceContext = sourceContext;
       }
       let session = await createSession(resolvedFolder, tool, name || '', createOptions);
 

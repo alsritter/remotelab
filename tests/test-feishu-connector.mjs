@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import http from 'http';
-import { mkdtemp, readFile, writeFile } from 'fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 
 const repoRoot = process.cwd();
+const tempHome = await mkdtemp(join(tmpdir(), 'remotelab-feishu-connector-'));
+process.env.HOME = tempHome;
+
 const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-selection.mjs')).href);
+const { saveUiRuntimeSelection } = await import(pathToFileURL(join(repoRoot, 'lib', 'runtime-selection.mjs')).href);
 
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
@@ -355,12 +359,10 @@ const mentionSummary = {
 };
 
 const mentionPrompt = buildRemoteLabMessage(mentionSummary);
-assert.match(mentionPrompt, /^Group chat\./);
-assert.match(mentionPrompt, /厉害不，@江虹 你发一条消息/);
-assert.match(mentionPrompt, /If you need to mention someone in your reply, use these exact tokens:/);
-assert.match(mentionPrompt, /- @江虹 => @_user_1/);
-assert.match(mentionPrompt, /Do not invent new mention tokens\./);
+assert.equal(mentionPrompt, '厉害不，@江虹 你发一条消息');
 assert.doesNotMatch(mentionPrompt, /open_id=|union_id=|Chat type:|Thread ID:|Sender:/);
+assert.doesNotMatch(mentionPrompt, /^Group chat\./);
+assert.doesNotMatch(mentionPrompt, /If you need to mention someone in your reply, use these exact tokens:/);
 assert.doesNotMatch(mentionPrompt, /Write the exact plain-text Feishu reply to send back/);
 
 assert.equal(
@@ -386,6 +388,7 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 
 const loadedConfig = await loadConfig(tempConfigPath);
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
+assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
 assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
   emojiType: 'GLANCE',
@@ -416,6 +419,11 @@ assert.equal(
   compileFeishuReplyText('@_user_1 这是一条消息。', mentionSummary.mentions),
   '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
   'reply mention tokens should compile into Feishu mention tags before sending',
+);
+assert.equal(
+  compileFeishuReplyText('@江虹 这是一条消息。', mentionSummary.mentions),
+  '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
+  'natural @displayName mentions should also compile into Feishu mention tags',
 );
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-whitelist-'));
@@ -589,6 +597,7 @@ assert.ok(persistedAfterJoin.membershipGrants['chat_group_approve_1:ou_new_user_
 assert.equal(persistedAfterJoin.approvedChats.chat_group_approve_1.name, 'Family Group');
 
 let createdPayload = null;
+let submittedPayload = null;
 const server = http.createServer(async (req, res) => {
   let body = '';
   req.on('data', (chunk) => {
@@ -604,6 +613,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/api/sessions/sess_feishu_1/messages') {
+    submittedPayload = JSON.parse(body || '{}');
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ run: { id: 'run_feishu_1' } }));
     return;
@@ -638,6 +648,12 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
 try {
   const address = server.address();
+  await saveUiRuntimeSelection({
+    selectedTool: 'claude',
+    selectedModel: 'claude-sonnet-4-5',
+    thinkingEnabled: true,
+    reasoningKind: 'toggle',
+  });
   const reply = await generateRemoteLabReply(
     {
       authCookie: 'session_token=test-cookie',
@@ -645,11 +661,11 @@ try {
       config: {
         chatBaseUrl: `http://127.0.0.1:${address.port}`,
         sessionFolder: repoRoot,
-        sessionTool: 'codex',
+        sessionTool: 'micro-agent',
         systemPrompt: 'Reply with plain text only.',
         thinking: false,
-        model: '',
-        effort: '',
+        model: 'gpt-5.4',
+        effort: 'low',
       },
     },
     {
@@ -665,13 +681,24 @@ try {
   assert.equal(createdPayload?.appName, 'Feishu');
   assert.equal(createdPayload?.sourceId, 'feishu');
   assert.equal(createdPayload?.sourceName, 'Feishu');
+  assert.equal(createdPayload?.tool, 'claude');
   assert.equal(createdPayload?.systemPrompt, 'Reply with plain text only.');
   assert.equal(createdPayload?.externalTriggerId, 'feishu:p2p:chat_for_scope');
+  assert.equal(createdPayload?.sourceContext?.chatType, 'p2p');
+  assert.equal(createdPayload?.sourceContext?.chatId, 'chat_for_scope');
+  assert.equal(submittedPayload?.tool, 'claude');
+  assert.equal(submittedPayload?.model, 'claude-sonnet-4-5');
+  assert.equal(submittedPayload?.thinking, true);
+  assert.equal(submittedPayload?.effort, undefined);
+  assert.equal(submittedPayload?.text, 'Please confirm the app scope.');
+  assert.equal(submittedPayload?.sourceContext?.messageId, 'msg_for_scope');
+  assert.equal(submittedPayload?.sourceContext?.chatType, 'p2p');
   assert.equal(reply.sessionId, 'sess_feishu_1');
   assert.equal(reply.runId, 'run_feishu_1');
   assert.equal(reply.replyText, 'Feishu reply ready.');
 } finally {
   await new Promise((resolve) => server.close(resolve));
+  await rm(tempHome, { recursive: true, force: true });
 }
 
 console.log('ok - empty assistant replies stay silent');

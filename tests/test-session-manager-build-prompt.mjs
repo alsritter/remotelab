@@ -99,6 +99,9 @@ const feishuSourcePrompt = await buildPrompt(
     ...baseSession,
     sourceId: 'feishu',
     sourceName: 'Feishu',
+    sourceContext: {
+      chatType: 'group',
+    },
   },
   '帮我看一下这个仓库的问题。',
   'codex',
@@ -110,6 +113,8 @@ const feishuSourcePrompt = await buildPrompt(
 assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\):/);
 assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
 assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
+assert.match(feishuSourcePrompt, /source-context/);
+assert.match(feishuSourcePrompt, /This session maps to a group chat/);
 
 const observerSourcePrompt = await buildPrompt(
   'session-test-4',

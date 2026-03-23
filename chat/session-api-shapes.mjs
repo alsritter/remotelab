@@ -10,6 +10,7 @@ function stripSessionShape(session, {
   const cloned = cloneJson(session);
   delete cloned.board;
   delete cloned.task;
+  delete cloned.sourceContext;
   if (!includeQueuedMessages) {
     delete cloned.queuedMessages;
   }

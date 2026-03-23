@@ -8,6 +8,7 @@ function normalizeSourceKey(value) {
 
 function buildFeishuRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'Feishu';
+  const chatType = trimString(session?.sourceContext?.chatType).toLowerCase();
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
@@ -15,10 +16,11 @@ function buildFeishuRuntimePrompt(session) {
     'Match the user\'s language when practical.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
+    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
-    'In group chats, if the message clearly does not require a response from you, output an empty string.',
+    chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, output an empty string.' : '',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function buildVoiceRuntimePrompt() {

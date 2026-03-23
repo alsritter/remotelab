@@ -225,9 +225,23 @@ function getAutoCompactStatusText(run) {
 const liveSessions = new Map();
 const observedRuns = new Map();
 const runSyncPromises = new Map();
+const MAX_SESSION_SOURCE_CONTEXT_BYTES = 16 * 1024;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeSourceContext(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized || serialized === '{}' || Buffer.byteLength(serialized, 'utf8') > MAX_SESSION_SOURCE_CONTEXT_BYTES) {
+      return null;
+    }
+    return JSON.parse(serialized);
+  } catch {
+    return null;
+  }
 }
 
 function isRecordedProcessAlive(pid) {
@@ -513,7 +527,28 @@ function sanitizeQueuedFollowUpOptions(options = {}) {
   if (typeof options.model === 'string' && options.model.trim()) next.model = options.model.trim();
   if (typeof options.effort === 'string' && options.effort.trim()) next.effort = options.effort.trim();
   if (options.thinking === true) next.thinking = true;
+  const sourceContext = normalizeSourceContext(options.sourceContext);
+  if (sourceContext) next.sourceContext = sourceContext;
   return next;
+}
+
+function buildQueuedFollowUpSourceContext(queue = []) {
+  if (!Array.isArray(queue) || queue.length === 0) return null;
+  if (queue.length === 1) {
+    return normalizeSourceContext(queue[0]?.sourceContext);
+  }
+  const queuedMessages = queue
+    .map((entry) => {
+      const sourceContext = normalizeSourceContext(entry?.sourceContext);
+      if (!sourceContext) return null;
+      const requestId = typeof entry?.requestId === 'string' ? entry.requestId.trim() : '';
+      return {
+        ...(requestId ? { requestId } : {}),
+        sourceContext,
+      };
+    })
+    .filter(Boolean);
+  return queuedMessages.length > 0 ? { queuedMessages } : null;
 }
 
 function serializeQueuedFollowUp(entry) {
@@ -661,6 +696,7 @@ async function flushQueuedFollowUps(sessionId) {
     const dispatchText = buildQueuedFollowUpDispatchText(queue);
     const transcriptText = buildQueuedFollowUpTranscriptText(queue);
     const dispatchOptions = resolveQueuedFollowUpDispatchOptions(queue, rawSession);
+    const queuedSourceContext = buildQueuedFollowUpSourceContext(queue);
 
     await submitHttpMessage(sessionId, dispatchText, [], {
       requestId: createInternalRequestId('queued_batch'),
@@ -668,6 +704,7 @@ async function flushQueuedFollowUps(sessionId) {
       model: dispatchOptions.model,
       effort: dispatchOptions.effort,
       thinking: dispatchOptions.thinking,
+      ...(queuedSourceContext ? { sourceContext: queuedSourceContext } : {}),
       preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(entry.images)),
       recordedUserText: transcriptText,
       queueIfBusy: false,
@@ -2959,6 +2996,32 @@ export async function getSessionTimelineEvents(sessionId, options = {}) {
   return buildSessionTimelineEvents(sessionId, options);
 }
 
+export async function getSessionSourceContext(sessionId, options = {}) {
+  const session = await getSession(sessionId);
+  if (!session) return null;
+  const requestedRequestId = typeof options.requestId === 'string' ? options.requestId.trim() : '';
+  const events = await loadHistory(sessionId, { includeBodies: false });
+  let matchedRequestId = requestedRequestId;
+  let messageContext = null;
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'message' || event.role !== 'user') continue;
+    if (requestedRequestId && (event.requestId || '') !== requestedRequestId) continue;
+    const candidate = normalizeSourceContext(event.sourceContext);
+    if (!candidate) continue;
+    messageContext = candidate;
+    matchedRequestId = event.requestId || matchedRequestId;
+    break;
+  }
+
+  return {
+    session: normalizeSourceContext(session.sourceContext),
+    message: messageContext,
+    requestId: matchedRequestId,
+  };
+}
+
 export async function getRunState(runId) {
   const run = await getRun(runId);
   if (!run) return null;
@@ -2984,6 +3047,8 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedEffort = typeof extra.effort === 'string' ? extra.effort.trim() : '';
   const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking');
   const requestedThinking = extra.thinking === true;
+  const hasRequestedSourceContext = Object.prototype.hasOwnProperty.call(extra, 'sourceContext');
+  const requestedSourceContext = normalizeSourceContext(extra.sourceContext);
   const hasRequestedActiveAgreements = Object.prototype.hasOwnProperty.call(extra, 'activeAgreements');
   const requestedActiveAgreements = hasRequestedActiveAgreements
     ? normalizeSessionAgreements(extra.activeAgreements || [])
@@ -3108,6 +3173,15 @@ export async function createSession(folder, tool, name, extra = {}) {
           }
         }
 
+        if (hasRequestedSourceContext) {
+          const currentSourceContext = normalizeSourceContext(updated.sourceContext);
+          if (JSON.stringify(currentSourceContext) !== JSON.stringify(requestedSourceContext)) {
+            if (requestedSourceContext) updated.sourceContext = requestedSourceContext;
+            else delete updated.sourceContext;
+            changed = true;
+          }
+        }
+
         const nextAppId = requestedAppId || resolveEffectiveAppId(updated.appId);
         if (updated.appId !== nextAppId) {
           updated.appId = nextAppId;
@@ -3161,6 +3235,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (extra.internalRole) session.internalRole = extra.internalRole;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
+    if (requestedSourceContext) session.sourceContext = requestedSourceContext;
     if (extra.forkedFromSessionId) session.forkedFromSessionId = extra.forkedFromSessionId;
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
@@ -3767,6 +3842,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
+  const sourceContext = normalizeSourceContext(options.sourceContext);
   const imageRefs = savedImages.map((img) => ({
     filename: img.filename,
     ...(img.originalName ? { originalName: img.originalName } : {}),
@@ -3853,6 +3929,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     const userEvent = messageEvent('user', recordedUserText, imageRefs.length > 0 ? imageRefs : undefined, {
       requestId,
       runId: run.id,
+      ...(sourceContext ? { sourceContext } : {}),
     });
     await appendEvent(sessionId, userEvent);
 

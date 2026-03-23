@@ -17,6 +17,7 @@ import {
   listQueue,
   updateQueueItem,
 } from '../lib/agent-mailbox.mjs';
+import { resolveExternalRuntimeSelection } from '../lib/external-runtime-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
 function parseArgs(argv) {
@@ -225,29 +226,18 @@ function hasExplicitPinnedRuntime(automation) {
 function resolveReplyRuntimeSelection(automation, uiSelection) {
   const session = automation?.session || {};
   const pinned = hasExplicitPinnedRuntime(automation);
-  const selectedTool = trimString(uiSelection?.selectedTool);
-  const selectedModel = trimString(uiSelection?.selectedModel);
-  const selectedEffort = trimString(uiSelection?.selectedEffort);
-  const reasoningKind = trimString(uiSelection?.reasoningKind).toLowerCase();
   const defaultTool = trimString(DEFAULT_AUTOMATION_SETTINGS.session.tool) || 'codex';
-  const fallbackTool = trimString(session.tool) || defaultTool;
-  const effectiveTool = pinned
-    ? fallbackTool
-    : selectedTool || fallbackTool || defaultTool;
-  const uiMatchesEffectiveTool = !!selectedTool && selectedTool === effectiveTool;
-
-  return {
-    tool: effectiveTool || defaultTool,
-    model: pinned
-      ? trimString(session.model)
-      : (uiMatchesEffectiveTool ? selectedModel : ''),
-    effort: pinned
-      ? trimString(session.effort)
-      : (uiMatchesEffectiveTool && reasoningKind === 'enum' ? selectedEffort : ''),
-    thinking: pinned
-      ? session.thinking === true
-      : (uiMatchesEffectiveTool && reasoningKind === 'toggle' && uiSelection?.thinkingEnabled === true),
-  };
+  return resolveExternalRuntimeSelection({
+    uiSelection,
+    mode: pinned ? 'pinned' : 'ui',
+    fallback: {
+      tool: trimString(session.tool) || defaultTool,
+      model: trimString(session.model),
+      effort: trimString(session.effort),
+      thinking: session.thinking === true,
+    },
+    defaultTool,
+  });
 }
 
 function buildCompletionTarget(item, rootDir, requestId) {

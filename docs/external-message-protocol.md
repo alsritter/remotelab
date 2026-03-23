@@ -130,6 +130,7 @@ Useful optional fields for connectors:
 - `description` — short human-facing description
 - `systemPrompt` — optional connector-specific override; keep it minimal and use it only for constraints not already handled by backend-owned source logic
 - `externalTriggerId` — stable dedupe key for the upstream thread
+- `sourceContext` — optional structured session-level source metadata kept outside the inline user message text and retrievable later on demand
 
 Backend-owned source/runtime policy:
 
@@ -197,6 +198,7 @@ Optional owner-only fields:
 - `model`
 - `effort`
 - `thinking`
+- `sourceContext`
 - `images`
 
 Example:
@@ -223,6 +225,13 @@ Important response fields:
 - `duplicate` — idempotency result for this `requestId`
 - `queued` — `true` when the message was accepted into the session follow-up queue instead of starting a new run immediately
 - `run` — the new run when one started immediately, otherwise `null`
+
+If you want source metadata to stay queryable without padding every prompt, prefer:
+
+- keeping the inline `text` close to the real user message
+- storing session-level metadata on `POST /api/sessions` via `sourceContext`
+- storing per-message metadata on `POST /api/sessions/:sessionId/messages` via `sourceContext`
+- retrieving it only when needed with `GET /api/sessions/:sessionId/source-context`
 - `session` — the refreshed session payload
 
 For UI and status rendering, external clients should prefer the server-authored `session.activity` object instead of inventing their own session lifecycle states on the client.
