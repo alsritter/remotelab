@@ -97,7 +97,7 @@ function printUsage() {
   node scripts/agent-mail.mjs outbound configure-apple-mail [--account <name-or-email>] [--root <dir>]
   node scripts/agent-mail.mjs outbound configure-cloudflare-worker [--worker-base-url <url>] [--from <email>] [--worker-token <token>] [--worker-token-env <ENV>] [--root <dir>]
   node scripts/agent-mail.mjs automation status [--root <dir>]
-  node scripts/agent-mail.mjs automation configure [--enabled <true|false>] [--allowlist-auto-approve <true|false>] [--auto-approve-reviewer <name>] [--chat-base-url <url>] [--folder <dir>] [--tool <tool>] [--group <name>] [--description <text>] [--system-prompt <text>] [--model <name>] [--effort <level>] [--thinking <true|false>] [--root <dir>]
+  node scripts/agent-mail.mjs automation configure [--enabled <true|false>] [--allowlist-auto-approve <true|false>] [--auto-approve-reviewer <name>] [--chat-base-url <url>] [--auth-file <path>] [--delivery-mode <reply_email|session_only>] [--folder <dir>] [--tool <tool>] [--group <name>] [--description <text>] [--system-prompt <text>] [--model <name>] [--effort <level>] [--thinking <true|false>] [--root <dir>]
 
 Examples:
   node scripts/agent-mail.mjs init --name Rowan --local-part rowan --domain example.com --allow owner@example.com
@@ -106,7 +106,8 @@ Examples:
   node scripts/agent-mail.mjs approve mail_123 --reviewer operator
   node scripts/agent-mail.mjs outbound configure-apple-mail --account Google
   node scripts/agent-mail.mjs outbound configure-cloudflare-worker --from agent@example.com --worker-base-url https://remotelab-email-worker.example.workers.dev
-  node scripts/agent-mail.mjs automation configure --allowlist-auto-approve true --chat-base-url http://127.0.0.1:7690`);
+  node scripts/agent-mail.mjs automation configure --allowlist-auto-approve true --chat-base-url http://127.0.0.1:7690
+  node scripts/agent-mail.mjs automation configure --delivery-mode session_only --chat-base-url http://127.0.0.1:7701 --auth-file ~/.remotelab/instances/trial6/config/auth.json`);
 }
 
 function printJson(value) {
@@ -256,6 +257,8 @@ async function main() {
         allowlistAutoApprove: optionBoolean(options, 'allowlist-auto-approve', current.allowlistAutoApprove),
         autoApproveReviewer: optionValue(options, 'auto-approve-reviewer', current.autoApproveReviewer),
         chatBaseUrl: optionValue(options, 'chat-base-url', current.chatBaseUrl),
+        authFile: optionValue(options, 'auth-file', current.authFile),
+        deliveryMode: optionValue(options, 'delivery-mode', current.deliveryMode),
         session: {
           ...current.session,
           folder: optionValue(options, 'folder', current.session.folder),

@@ -348,6 +348,51 @@ function testDecodesNestedMultipartBodyText() {
   }
 }
 
+function testEnvelopeRecipientRoutesToGuestInstanceAlias() {
+  const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-routing-'));
+  try {
+    initializeMailbox({
+      rootDir,
+      name: 'Rowan',
+      localPart: 'rowan',
+      domain: 'jiujianian.dev',
+      allowEmails: ['jiujianian@gmail.com'],
+    });
+    saveMailboxAutomation(rootDir, {
+      allowlistAutoApprove: true,
+    });
+
+    const ingested = ingestRawMessage(
+      [
+        'From: jiujianian@gmail.com',
+        'To: rowan@jiujianian.dev',
+        'Subject: trial6 route',
+        'Message-ID: <trial6-route@example.com>',
+        'Content-Type: text/plain; charset=UTF-8',
+        '',
+        'route me to the guest instance please.',
+      ].join('\n'),
+      'trial6-route.eml',
+      rootDir,
+      {
+        text: 'route me to the guest instance please.',
+        envelope: {
+          rcptTo: 'rowan+trial6@jiujianian.dev',
+        },
+      },
+    );
+
+    assert.equal(ingested.message.toAddress, 'rowan@jiujianian.dev');
+    assert.equal(ingested.message.envelopeToAddress, 'rowan+trial6@jiujianian.dev');
+    assert.equal(ingested.message.effectiveToAddress, 'rowan+trial6@jiujianian.dev');
+    assert.equal(ingested.routing.instanceName, 'trial6');
+    assert.equal(ingested.routing.mailboxSubaddress, 'trial6');
+    assert.equal(ingested.routing.matchedBy, 'plus_address_instance');
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+}
+
 testCloudflareWebhookHealthy();
 testCloudflareQueueReady();
 testCloudflareValidatedDelivery();
@@ -356,4 +401,5 @@ testStripsQuotedReplyContent();
 testStripsUniformQuotedReplyContent();
 testDecodesBase64BodyText();
 testDecodesNestedMultipartBodyText();
+testEnvelopeRecipientRoutesToGuestInstanceAlias();
 console.log('agent mailbox tests passed');
