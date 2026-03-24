@@ -2,15 +2,15 @@
 
 [中文](README.zh.md) | English
 
-**The AI workbench for super-individuals.**
+**A cross-surface AI workbench that helps ordinary people hand repetitive digital work to AI.**
 
-RemoteLab exists to maximize the efficiency of human-AI collaboration for people who already use AI seriously — and for the larger class of AI-native super-individuals that will emerge next.
+RemoteLab is not only for the small group of people who already know how to use AI well. The goal is to bring AI automation to a much wider set of users, especially people with lots of repetitive digital work but no engineering automation background.
 
-It does not care much whether the control surface is a phone, tablet, or desktop. The point is to give the human the highest-leverage way to direct AI work while strong executors like `codex`, `claude`, and compatible local tools do the heavy lifting on a real machine.
+It does not care much whether the control surface is a phone, tablet, or desktop. The point is to let a user hand over a messy recurring task, screenshot, or sample file, have the AI clarify the problem first, and then let strong executors like `codex`, `claude`, and compatible local tools do the real work on a real machine.
 
 ![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
 
-> Current baseline: `v0.3` — owner-first session orchestration, durable on-disk history, executor adapters, App-based workflow packaging, and a no-build web UI that works across phone and desktop.
+> Current baseline: `v0.3` — an owner-first session runtime, durable on-disk history, executor adapters, App-based workflow packaging, and a no-build web UI that works across phone and desktop.
 
 > Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
 
@@ -19,7 +19,7 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 If the demo makes sense, do not keep reading. Open a fresh terminal on the host machine, start Codex, Claude Code, or another coding agent, and paste this:
 
 ```text
-I want to set up RemoteLab on this machine so I can control AI workers from any device and keep long-running AI work organized.
+I want to set up RemoteLab on this machine so I can hand repetitive digital work to AI from any device and let it automate the work on a real computer.
 
 Network mode: [cloudflare | tailscale]
 
@@ -47,37 +47,40 @@ Need the longer version first? Jump to [Setup details](#setup-details) or open `
 
 ### Vision
 
-If you want the blunt version, RemoteLab is an AI IDE workbench for future super-individuals: people who can use AI so well that their personal leverage compounds far beyond that of a normal individual.
+Bluntly: RemoteLab is an AI automation workbench for ordinary people. It should first serve people who have repetitive digital work but have not yet turned AI into part of their daily operating flow.
 
-The goal is simple: find the most effective interaction shape between humans and increasingly autonomous agents, then turn that interaction shape into a product that materially increases real-world productivity.
+The first goal is concrete: in a short conversation, help a user hand off a tedious job that used to cost hours every week — data cleanup, light analysis, report generation, file batch work, exports/imports, triggered notifications, and other scriptable chores.
 
 ### Core judgments
 
-- Task scope keeps expanding: from minutes, to hours, to days, and eventually even week-scale work.
-- Concurrency becomes default: to fully use AI, people will run many agents in parallel.
-- Human memory becomes a bottleneck: when a task finishes hours later, the human needs fast context recovery, not raw logs.
-- Project orchestration becomes personal infrastructure: people need help managing priority, blockers, and follow-ups across many concurrent threads.
-- Super-individuals will want distribution: once a workflow works, they will want to package it and let other people use it too.
+- The biggest unmet need is not encouraging people to open endless concurrent sessions; it is finding repetitive work that is actually worth automating.
+- Most target users are not AI-native operators and do not arrive with product-manager-grade prompts; the AI needs to help clarify the task, gather examples, and design a workable approach.
+- The first screen cannot be a blank session list. New users need a default `Welcome App` that briefly explains what RemoteLab can do, asks about their role and repetitive-work pain point, and guides them toward one concrete first automation.
+- The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
+- Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and review results or approvals from the most convenient device.
+- `Session`, `App`, concurrency, and distribution still matter, but they are enabling layers or later multipliers rather than the first headline.
 
 ### What RemoteLab is
 
-- an AI workbench that sits above strong executors running on a real machine
-- a project and orchestration layer for concurrent agent work
-- an external memory / context-recovery system for long-running sessions
-- a packaging and distribution layer for agentic-native apps
-- an endpoint-flexible web product rather than a phone-only or desktop-only experience
+- an AI automation workbench that sits above strong executors running on a real machine
+- an AI collaboration entry point that helps users turn vague problems into executable plans
+- a cross-surface control plane where people can start from phone, continue from desktop, and let the machine do the work
+- a durable work-thread system that helps humans recover context instead of repeatedly re-explaining the task
+- a packaging layer that can turn proven automations into reusable `Apps`
 
 ### What RemoteLab is not
 
 - a terminal emulator
 - a traditional editor-first IDE
+- a power-user cockpit whose main value is opening as many concurrent sessions as possible
+- a prompt playground that assumes the user already knows how to specify the work perfectly
 - a generic multi-user chat SaaS
 - a closed all-in-one executor stack trying to out-execute `codex` or `claude`
 
 ### Two core product layers
 
-1. **Orchestration above single-task executors.** RemoteLab helps the user manage the full portfolio of ongoing work above tools like `Codex` or `Claude Code`: more concurrency, clearer progress, faster context recovery, better attention allocation, and better final quality.
-2. **Agentic-native app building and distribution.** RemoteLab gives super-individuals a low-friction way to turn their own SOPs into distributable agentic-native workflows — whether the surface is a built-in web UI, an external bot, or another frontend.
+1. **First, solve repetitive digital work.** RemoteLab should accept a messy but recurring task, help the user clarify inputs, outputs, and constraints, and turn it into an automation that reliably saves time.
+2. **Then package and reuse what works.** Once an automation proves valuable, RemoteLab can turn it into an `App`, template, or other reusable entry point for the same user or nearby user groups.
 
 ### Product grammar
 
@@ -100,6 +103,7 @@ The architectural assumptions behind that model:
 
 RemoteLab is opinionated in a few ways:
 
+- **Clarify the problem before executing.** RemoteLab should not assume the user already thinks like an AI product manager; the AI needs to carry part of the problem-framing and solution-design work.
 - **Do not rebuild the executor layer.** RemoteLab should not spend most of its energy optimizing single-task agent internals.
 - **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
 - **Package workflows, do not just share prompts.** `Apps` are reusable operating shapes, not just copy-pasted text.

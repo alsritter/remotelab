@@ -1,6 +1,8 @@
 # Capability-First Shipping Plan
 
-Status: active working direction as of 2026-03-18
+Status: implementation note from 2026-03-18; partially superseded as a product headline by the 2026-03-24 reset in `notes/directional/product-vision.md`
+
+Use this note for the session-first/main-flow implementation details, but treat multi-session fan-out and cross-session freshness as enabling capabilities rather than the primary top-level product promise.
 
 Concrete execution companion: `notes/current/session-main-flow-next-push.md`
 

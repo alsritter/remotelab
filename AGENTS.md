@@ -9,13 +9,22 @@
 
 ## What Is RemoteLab
 
-A web app that gives super-individuals an AI workbench for orchestrating AI work across phone and desktop. Strong executors run on the owner’s macOS/Linux machine; the human manages goals, projects, and decisions from whichever endpoint is most convenient.
+A web app that turns a real macOS/Linux machine into an AI automation workbench accessible from phone and desktop. It is designed first for people with repetitive digital work — including users who are not already AI power users — so they can bring a messy task, sample files, or a recurring chore and let the system help clarify the problem, shape an approach, and execute it on the machine.
 
-**Not** a terminal emulator, a traditional editor-first IDE, or a chatbot. It's an **AI workbench / control console for human-AI collaboration** — the user sets direction, the executors do the work, and RemoteLab keeps orchestration and context coherent.
+**Not** a terminal emulator, a traditional editor-first IDE, or a chatbot. It's an **AI workbench / control console for human-AI collaboration** — the user does not need a perfect spec up front; RemoteLab should help discover the right problem, propose a workable workflow, and keep execution plus context coherent.
 
 - Single owner, not multi-user
+- First wedge: repetitive digital work that can be automated quickly
+- Phone + desktop are both first-class control surfaces
 - Node.js, no external frameworks (only `ws` for WebSocket)
 - Vanilla JS frontend, no build tools
+
+## Current Product Framing
+
+- Default target user: someone with repeated digital chores, not necessarily an AI-native operator
+- Core promise: a short conversation can eliminate hours of recurring manual work each week
+- Interaction rule: AI should act like a product manager / solution designer, helping clarify the task instead of waiting for a perfect prompt
+- Multi-session orchestration remains useful, but it is an enabling capability rather than the primary headline
 
 ## Documentation Rule
 
@@ -219,7 +228,7 @@ Reusable AI workflows shareable via link. Each App defines: name, systemPrompt, 
 
 ## Current Priorities
 
-Current operating rule: prefer capability-first shipping slices that validate the target product shape before another broad refactor round. Keep refactors limited to the work directly required by those slices or to regressions they expose.
+Current operating rule: prefer product slices that help non-expert users hand off repetitive digital work quickly from phone or desktop and see clear value fast. Treat multi-session orchestration, richer project structure, and broader workflow distribution as enabling layers unless they directly improve that mainstream automation path.
 
 ### Done (recent)
 - [x] Owner/Visitor dual-role identity
@@ -230,12 +239,12 @@ Current operating rule: prefer capability-first shipping slices that validate th
 - [x] Remove voice-input UI/backend while keeping transcript-first voice cleanup
 
 ### P1 — Next Up
-- [ ] Multi-session fan-out from one owner turn — let a manager/control session intentionally spawn several focused parallel sessions, keep hierarchy light, and rely on concise aggregation plus session-level navigation rather than heavy parent-side handoff UI
-- [ ] Cross-session context freshness — let a new or sibling session pick up recent relevant context from adjacent work without requiring the user to restate everything, while keeping imports bounded and inspectable
-- [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, summary/refs reuse, and any cross-session handoff packet so session-first multi-session flows stay fast and bounded
-- [ ] Expose AI-controlled session presentation (`title`, `group`, `description`) via session APIs, then validate the AI-owned session-list / inbox UX as the primary owner surface now that board removal is complete
-- [ ] Universal control inbox / dispatcher session — a default high-trust intake surface layered on top of the session-first + multi-session contract, not one giant always-growing work thread
-- [ ] Revisit grouping/task-like workflow surfaces only if the rewritten main flow later proves a richer derived view is truly needed; keep the owner-facing surface single-layer and session-first unless lived use disproves that default
+- [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting
+- [ ] Fast repetitive-work automation loops — optimize for data cleanup, report generation, export/import, file processing, notifications, and other simple scriptable chores that can save hours per week quickly
+- [ ] Mobile capture + desktop execution handoff — make it natural to start from phone with screenshots/files/short instructions, let the real machine do the work, and keep approvals concise
+- [ ] State-first, decision-first output shaping — default summaries should tell non-expert users what changed, whether input is needed now, and what outcome to expect next
+- [ ] `Welcome App` / guided onboarding — on first launch, seed a built-in guide App that explains capabilities in plain language, asks about the owner's background and first repetitive-work pain point, and routes them into one concrete automation brief instead of an empty session list
+- [ ] Simple packaging of validated automations — let repeated successful flows become reusable `Apps` or templates after they prove value
 - [ ] Skills framework (file storage + loading mechanism)
 - [ ] Provider registry abstraction — open model selection, local JS/JSON provider config, no more Claude/Codex-only model wiring
 - [ ] Provider management UX — setup/settings should support preset enablement, simple GUI JSON providers, and advanced code mode
@@ -243,8 +252,13 @@ Current operating rule: prefer capability-first shipping slices that validate th
 - [ ] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking
 
 ### P2 — Future
+- [ ] Multi-session fan-out from one owner turn — valuable when it materially improves the mainstream automation path, but not the headline by itself
+- [ ] Cross-session context freshness — let a new or sibling session pick up recent relevant context from adjacent work without requiring the user to restate everything, while keeping imports bounded and inspectable
+- [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, summary/refs reuse, and any cross-session handoff packet so continued or spawned work stays fast and bounded
+- [ ] Universal control inbox / dispatcher session — a high-trust intake surface that can later orchestrate several focused sessions when useful, without becoming one giant work thread
+- [ ] Revisit grouping/task-like workflow surfaces only if the owner flow later proves a richer derived view is truly needed; keep the surface simple unless lived use disproves that default
 - [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
-- [ ] First-run onboarding App/session — on a fresh RemoteLab Live launch, seed a built-in guide App and intro session so the owner sees capabilities and suggested next actions instead of an empty session list; decide whether it should behave like a persistent default surface, a dismissible starter, or the same object as the control inbox
+- [ ] Evolve the `Welcome App` into the right long-term intake surface — once the first-run flow proves valuable, decide whether it should stay a dismissible starter, become a persistent control inbox, or merge with the universal dispatcher session
 - [ ] Queued follow-up composer buffer — while a session is still streaming a reply, let the user stage another message in a buffer and auto-submit it as a fresh turn immediately after the active response finishes; external connectors like Feishu should share the same staged-turn contract and later define an interrupt/replace policy
 - [ ] Session fork follow-ups — extend the shipped hard-clone head-fork with optional `Fork from here`, lightweight lineage navigation, and exact historical fork support when compaction-safe snapshots exist
 - [ ] Broaden theming beyond system light/dark — keep v1 system-driven, then add optional explicit theme selection and more color palettes, preferably reusing VS Code-style open theme configs/tokens where that fits cleanly
@@ -261,7 +275,7 @@ Current operating rule: prefer capability-first shipping slices that validate th
 | Notes Map | `notes/README.md` | Note taxonomy: `current` vs `directional` vs `archive` vs `local` |
 | Project Architecture | `docs/project-architecture.md` | Top-down map of the shipped system, code locations, runtime flows, and current-vs-direction split |
 | Remove Board + Rewrite Main Flow | `notes/current/remove-board-and-rewrite-main-flow.md` | Current decision record for deleting the shipped board surface and restarting main-flow design from a session-first baseline |
-| Capability-First Shipping Plan | `notes/current/capability-first-shipping-plan.md` | Current near-term product-shape note for session-first main flow, multi-session fan-out, and bounded context freshness |
+| Capability-First Shipping Plan | `notes/current/capability-first-shipping-plan.md` | Earlier implementation note for the session-first/main-flow rewrite; read together with `product-vision.md` because the 2026-03-24 direction reset demotes multi-session fan-out from headline to enabling layer |
 | Session Main Flow + Context Freshness Next Push | `notes/current/session-main-flow-next-push.md` | Concrete execution pack for the current post-board product slice |
 | Core Domain Contract | `notes/current/core-domain-contract.md` | Current domain/refactor baseline when deciding which product objects are canonical |
 | Product Surface Lifecycle | `notes/current/product-surface-lifecycle.md` | Current rule for keep/iterate/retire decisions on shipped feature surfaces |
@@ -270,7 +284,7 @@ Current operating rule: prefer capability-first shipping slices that validate th
 | App-Centric Architecture | `notes/directional/app-centric-architecture.md` | Historical/consolidated direction note for treating default chat and shared Apps as one policy model |
 | Provider Architecture | `notes/directional/provider-architecture.md` | Open provider/model abstraction, local JS/JSON extension path, migration plan |
 | Product Vision | `notes/directional/product-vision.md` | Product rationale and open questions; not the canonical shipped-status tracker |
-| Super-Individual Workbench | `notes/directional/super-individual-workbench.md` | Sharpened product-definition memo: control plane vs IDE, orchestration-first sequencing, packaging-before-distribution |
+| Super-Individual Workbench | `notes/directional/super-individual-workbench.md` | Historical memo from the earlier super-individual framing; still useful background on control-plane boundaries, but not the current target-user statement |
 | AI-Driven Interaction | `notes/directional/ai-driven-interaction.md` | Deferred triggers design, session metadata schema, future phases |
 | Autonomous Execution | `notes/directional/autonomous-execution.md` | P2 background execution vision |
 | Message Transport Architecture | `notes/message-transport-architecture.md` | Historical transport/runtime rationale after the HTTP-first architecture landed |

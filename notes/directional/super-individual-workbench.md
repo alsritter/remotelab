@@ -2,6 +2,8 @@
 
 _Last updated: 2026-03-17_
 
+> Status: historical framing from an earlier product phase. The current primary direction is `notes/directional/product-vision.md`, which shifts the headline from super-individual orchestration to mainstream guided automation on real machines. Treat this memo as useful background on control-plane boundaries and packaging, not as the current target-user statement.
+
 > 状态：产品定义 sharpen memo。
 > 目的：把“AI 超级个体工作台”的直觉压缩成更可执行的产品选择，明确哪些方向已经对齐、哪些地方需要硬选择、哪些事情该优先做、哪些事情应该主动不做。
 > 当前 shipped 基线请看 `docs/project-architecture.md`；现有方向背景请看 `notes/directional/product-vision.md`、`notes/directional/app-centric-architecture.md`、`notes/directional/ai-driven-interaction.md`。

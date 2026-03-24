@@ -40,13 +40,13 @@ When the architecture changes materially, keep these docs aligned as part of the
 
 ## 1. What RemoteLab is
 
-RemoteLab is an **endpoint-flexible AI workbench for super-individuals coordinating AI work on a real computer**.
+RemoteLab is an **endpoint-flexible AI automation workbench that helps people hand repetitive digital work to AI on a real computer**.
 
 The core product shape is:
 
 - the user steers work from phone or desktop, whichever is most convenient
 - strong executors run on the owner’s macOS/Linux machine
-- RemoteLab sits above them as an orchestration, context-recovery, and workflow-packaging layer
+- RemoteLab sits above them as a guided-intake, execution, context-recovery, and workflow-packaging layer
 - the agent is treated more like a person operating a full computer than a sandboxed in-browser chatbot
 - the browser is mainly a control surface and a status surface, not the system of record
 
