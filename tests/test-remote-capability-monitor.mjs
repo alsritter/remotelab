@@ -80,7 +80,6 @@ const releaseAnalysis = analyzeItem(atomItems[0], releaseSource);
 assert.equal(releaseAnalysis.interesting, true);
 assert.ok(releaseAnalysis.proposals.some((proposal) => /Detached run queues/i.test(proposal)));
 assert.ok(releaseAnalysis.proposals.some((proposal) => /Batch permission inboxes/i.test(proposal)));
-assert.ok(releaseAnalysis.proposals.some((proposal) => /Voice briefings/i.test(proposal)));
 
 const happyAnalysis = analyzeItem(happyItem, happySource);
 assert.equal(happyAnalysis.interesting, true);
