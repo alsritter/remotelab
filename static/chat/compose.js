@@ -367,13 +367,24 @@ function sendMessage(existingRequestId) {
     let outboundText = text;
     let outboundImages = queuedImages;
     try {
+      if (shouldCleanTranscript) {
+        const cleanupResult = await maybeRewriteComposerTextBeforeSend(sessionId, text);
+        if (!(pendingComposerSend && pendingComposerSend.requestId === requestId)) return;
+        outboundText = cleanupResult.text || text;
+        pendingComposerSend.text = outboundText;
+        pendingComposerSend.stage = "sending";
+        pendingComposerSend.cleanupApplied = cleanupResult.rewriteApplied === true;
+        pendingComposerSend.cleanupFallback = cleanupResult.fallback === true;
+        syncComposerPendingUi();
+      }
+
       if (queuedImages.length > 0) {
         pendingComposerSend.stage = "uploading";
         syncComposerPendingUi();
         outboundImages = await prepareComposerAttachmentsForSend(sessionId, queuedImages);
         if (!(pendingComposerSend && pendingComposerSend.requestId === requestId)) return;
         pendingComposerSend.images = outboundImages.slice();
-        pendingComposerSend.stage = shouldCleanTranscript ? "cleaning" : "sending";
+        pendingComposerSend.stage = "sending";
         syncComposerPendingUi();
       }
 
@@ -381,7 +392,6 @@ function sendMessage(existingRequestId) {
         action: "send",
         sessionId,
         text: outboundText || "(attachment)",
-        rewriteWithContext: shouldCleanTranscript,
       };
       msg.requestId = requestId;
       if (!visitorMode) {

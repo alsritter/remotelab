@@ -301,11 +301,9 @@ const detachedSendAccepted = await detachedSendContext.dispatchAction({
   action: 'send',
   sessionId: 'session-origin',
   text: 'send this from the original session',
-  rewriteWithContext: true,
 });
 assert.equal(detachedSendAccepted, true, 'session-bound sends should still succeed when the UI is attached elsewhere');
 assert.equal(detachedRequestPayload?.url, '/api/sessions/session-origin/messages', 'send should target the explicit origin session instead of the currently attached one');
-assert.match(String(detachedRequestPayload?.options?.body || ''), /"rewriteWithContext":true/, 'send should forward the rewrite flag through the HTTP payload');
 assert.equal(detachedCurrentRefreshes, 0, 'detached sends should not refresh the unrelated currently attached session');
 assert.equal(detachedSidebarRefreshes, 1, 'detached sends should refresh the origin session in the sidebar instead');
 

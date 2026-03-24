@@ -4112,18 +4112,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     };
   }
 
-  let normalizedText = text.trim();
-  if (options.rewriteWithContext === true && normalizedText) {
-    try {
-      const rewritten = await rewriteVoiceTranscriptForSession(sessionId, normalizedText);
-      const rewrittenText = typeof rewritten?.transcript === 'string' ? rewritten.transcript.trim() : '';
-      if (rewrittenText) {
-        normalizedText = rewrittenText;
-      }
-    } catch (error) {
-      console.warn(`[voice-cleanup] message rewrite failed for ${sessionId.slice(0, 8)}: ${error?.message || error}`);
-    }
-  }
+  const normalizedText = text.trim();
 
   let activeRun = null;
   let hasActiveRun = false;

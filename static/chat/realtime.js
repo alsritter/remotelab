@@ -215,7 +215,6 @@ async function dispatchAction(msg) {
               if (msg.model) formData.set("model", msg.model);
               if (msg.effort) formData.set("effort", msg.effort);
               if (msg.thinking) formData.set("thinking", "true");
-              if (msg.rewriteWithContext) formData.set("rewriteWithContext", "true");
               for (const image of msg.images || []) {
                 if (image?.file) {
                   formData.append("images", image.file, image.originalName || image.file.name || "attachment");
@@ -253,7 +252,6 @@ async function dispatchAction(msg) {
               body: JSON.stringify({
                 requestId,
                 text: msg.text,
-                ...(msg.rewriteWithContext ? { rewriteWithContext: true } : {}),
                 ...(msg.images ? { images: msg.images } : {}),
                 ...(msg.tool ? { tool: msg.tool } : {}),
                 ...(msg.model ? { model: msg.model } : {}),
