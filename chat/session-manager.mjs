@@ -1545,6 +1545,7 @@ async function enrichSessionMeta(meta, _options = {}) {
     sourceName: resolveSessionSourceName(meta, sourceId),
     latestSeq: snapshot.latestSeq,
     lastEventAt: snapshot.lastEventAt,
+    lastAssistantMessageAt: snapshot.lastAssistantMessageAt,
     messageCount: snapshot.messageCount,
     activeMessageCount: snapshot.activeMessageCount,
     contextMode: snapshot.contextMode,

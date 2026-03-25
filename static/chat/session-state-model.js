@@ -166,6 +166,10 @@
     return parseSessionTime(stamp);
   }
 
+  function getSessionUnreadUpdateTime(session) {
+    return parseSessionTime(session?.lastAssistantMessageAt);
+  }
+
   function getSessionReviewTime(session) {
     return Math.max(
       parseSessionTime(session?.lastReviewedAt),
@@ -319,7 +323,9 @@
   function hasSessionUnreadUpdate(session) {
     if (!session) return false;
     if (isSessionBusy(session)) return false;
-    return getSessionLatestChangeTime(session) > getSessionReviewTime(session);
+    const unreadUpdateTime = getSessionUnreadUpdateTime(session);
+    if (unreadUpdateTime <= 0) return false;
+    return unreadUpdateTime > getSessionReviewTime(session);
   }
 
   function getSessionReviewStatusInfo(session) {

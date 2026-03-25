@@ -107,6 +107,7 @@ function emptyMeta() {
   return {
     latestSeq: 0,
     lastEventAt: null,
+    lastAssistantMessageAt: null,
     size: 0,
     counts: {},
   };
@@ -336,6 +337,13 @@ function incrementCounts(counts, event) {
   return next;
 }
 
+function getAssistantMessageTimestamp(currentStamp, event) {
+  if (event?.type !== 'message' || event.role !== 'assistant') {
+    return currentStamp || null;
+  }
+  return event.timestamp || currentStamp || Date.now();
+}
+
 async function appendEventUnlocked(sessionId, event) {
   await ensureSessionDir(sessionId);
   const meta = await loadMeta(sessionId);
@@ -346,6 +354,7 @@ async function appendEventUnlocked(sessionId, event) {
   await saveMetaUnlocked(sessionId, {
     latestSeq: seq,
     lastEventAt: stored.timestamp || Date.now(),
+    lastAssistantMessageAt: getAssistantMessageTimestamp(meta.lastAssistantMessageAt, stored),
     size: meta.size + 1,
     counts: incrementCounts(meta.counts, stored),
   });
@@ -357,6 +366,7 @@ async function appendEventsUnlocked(sessionId, events) {
   const meta = await loadMeta(sessionId);
   let latestSeq = meta.latestSeq;
   let lastEventAt = meta.lastEventAt;
+  let lastAssistantMessageAt = meta.lastAssistantMessageAt;
   let size = meta.size;
   let counts = meta.counts;
   const appended = [];
@@ -367,16 +377,28 @@ async function appendEventsUnlocked(sessionId, events) {
     const stored = await storeEvent(sessionId, normalized);
     appended.push(stored);
     lastEventAt = stored.timestamp || lastEventAt;
+    lastAssistantMessageAt = getAssistantMessageTimestamp(lastAssistantMessageAt, stored);
     size += 1;
     counts = incrementCounts(counts, stored);
   }
   await saveMetaUnlocked(sessionId, {
     latestSeq,
     lastEventAt,
+    lastAssistantMessageAt,
     size,
     counts,
   });
   return appended;
+}
+
+async function findLatestAssistantMessageAt(sessionId, latestSeq = 0) {
+  for (let seq = Math.max(1, latestSeq); seq >= 1; seq -= 1) {
+    const stored = await loadStoredEvent(sessionId, seq);
+    if (stored?.type === 'message' && stored.role === 'assistant') {
+      return stored.timestamp || null;
+    }
+  }
+  return null;
 }
 
 function clearSessionCaches(sessionId) {
@@ -448,9 +470,16 @@ export async function getHistorySnapshot(sessionId) {
   const activeMessageCount = activeFromSeq > 0
     ? await countMessageEventsAfter(sessionId, activeFromSeq)
     : messageCount;
+  const lastAssistantMessageAt = meta.lastAssistantMessageAt
+    || (
+      (meta.counts?.message_assistant || 0) > 0
+        ? await findLatestAssistantMessageAt(sessionId, meta.latestSeq || 0)
+        : null
+    );
   return {
     latestSeq: meta.latestSeq || 0,
     lastEventAt: meta.lastEventAt || null,
+    lastAssistantMessageAt,
     size: meta.size || 0,
     counts: { ...(meta.counts || {}) },
     messageCount,

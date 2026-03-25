@@ -44,6 +44,7 @@ try {
   const fullHistorySession = await getSession(session.id);
   assert.equal(fullHistorySession?.messageCount, 4, 'session should expose total text message count');
   assert.equal(fullHistorySession?.activeMessageCount, 4, 'session should count all text messages before compaction');
+  assert.equal(fullHistorySession?.lastAssistantMessageAt, 6, 'session should expose the latest assistant reply timestamp');
 
   await setContextHead(session.id, {
     mode: 'summary',
@@ -57,10 +58,12 @@ try {
   const compactedSession = await getSession(session.id);
   assert.equal(compactedSession?.messageCount, 4, 'compaction should not change total history message count');
   assert.equal(compactedSession?.activeMessageCount, 2, 'active count should exclude archived messages and non-message events');
+  assert.equal(compactedSession?.lastAssistantMessageAt, 6, 'compaction should preserve the latest assistant reply timestamp');
 
   const listedSession = (await listSessions()).find((entry) => entry.id === session.id);
   assert.equal(listedSession?.messageCount, 4, 'session list should expose the total history message count');
   assert.equal(listedSession?.activeMessageCount, 2, 'session list should expose only active messages after the archive boundary');
+  assert.equal(listedSession?.lastAssistantMessageAt, 6, 'session list should expose the latest assistant reply timestamp');
 
   await setContextHead(session.id, {
     mode: 'summary',

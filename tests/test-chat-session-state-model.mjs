@@ -137,20 +137,35 @@ assert.equal(workflowPriorityFallback.key, 'medium', 'unknown priority strings s
 const unreadDoneSession = makeSession({
   workflowState: 'done',
   lastEventAt: '2026-03-14T13:00:00.000Z',
+  lastAssistantMessageAt: '2026-03-14T13:00:00.000Z',
   lastReviewedAt: '2026-03-14T12:00:00.000Z',
 });
 assert.equal(model.hasSessionUnreadUpdate(unreadDoneSession), true, 'idle sessions updated after review should be marked unread');
 assert.equal(model.getSessionReviewStatusInfo(unreadDoneSession)?.key, 'unread', 'unread sessions should expose a dedicated review badge');
 
+const userOnlyUpdateSession = makeSession({
+  workflowState: 'done',
+  lastEventAt: '2026-03-14T13:00:00.000Z',
+  lastAssistantMessageAt: '2026-03-14T11:00:00.000Z',
+  lastReviewedAt: '2026-03-14T12:00:00.000Z',
+});
+assert.equal(
+  model.hasSessionUnreadUpdate(userOnlyUpdateSession),
+  false,
+  'new user messages or bookkeeping updates should not mark the session unread without a newer assistant reply',
+);
+
 const completeAndReviewed = makeSession({
   workflowState: 'done',
   lastEventAt: '2026-03-14T13:00:00.000Z',
+  lastAssistantMessageAt: '2026-03-14T13:00:00.000Z',
   lastReviewedAt: '2026-03-14T13:00:00.000Z',
 });
 assert.equal(model.isSessionCompleteAndReviewed(completeAndReviewed), true, 'completed sessions with no unseen updates should be de-emphasized');
 
 const runningUnreadCandidate = makeSession({
   lastEventAt: '2026-03-14T13:00:00.000Z',
+  lastAssistantMessageAt: '2026-03-14T13:00:00.000Z',
   lastReviewedAt: '2026-03-14T12:00:00.000Z',
   activity: makeActivity({
     run: {
@@ -200,6 +215,7 @@ assert.ok(
     makeSession({
       workflowState: 'done',
       lastEventAt: '2026-03-14T13:00:00.000Z',
+      lastAssistantMessageAt: '2026-03-14T13:00:00.000Z',
       lastReviewedAt: '2026-03-14T12:00:00.000Z',
     }),
     makeSession({
