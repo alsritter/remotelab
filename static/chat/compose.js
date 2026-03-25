@@ -1,6 +1,19 @@
 // ---- Send message ----
+const fallbackStrings = {
+  "compose.voiceCleanup.on": "On: clean voice transcripts with the current session before sending",
+  "compose.voiceCleanup.off": "Off: send immediately without the hidden transcript cleanup step",
+  "compose.pending.cleaningWithText": "Cleaning transcript\u2026",
+  "compose.pending.uploading": "Uploading attachment\u2026",
+  "compose.pending.sendingAttachment": "Sending attachment\u2026",
+  "compose.pending.sending": "Sending\u2026",
+};
+
+function fallbackTranslate(key) {
+  return fallbackStrings[key] || key;
+}
+
 function t(key, vars) {
-  return window.remotelabT ? window.remotelabT(key, vars) : key;
+  return window.remotelabT ? window.remotelabT(key, vars) : fallbackTranslate(key);
 }
 
 let pendingComposerSend = null;
@@ -100,6 +113,7 @@ async function uploadComposerAttachmentToAsset(sessionId, attachment) {
     assetId: finalizedAsset.id,
     originalName: finalizedAsset.originalName || attachment?.originalName || file.name || "attachment",
     mimeType: finalizedAsset.mimeType || attachment?.mimeType || file.type || "application/octet-stream",
+    ...(Number.isFinite(finalizedAsset?.sizeBytes) ? { sizeBytes: finalizedAsset.sizeBytes } : Number.isFinite(file.size) ? { sizeBytes: file.size } : {}),
     ...(attachment?.objectUrl ? { objectUrl: attachment.objectUrl } : {}),
   };
 }
@@ -414,6 +428,8 @@ function sendMessage(existingRequestId) {
           ...(img.assetId ? { assetId: img.assetId } : {}),
           ...(img.originalName ? { originalName: img.originalName } : {}),
           ...(img.mimeType ? { mimeType: img.mimeType } : {}),
+          ...(Number.isFinite(img?.sizeBytes) ? { sizeBytes: img.sizeBytes } : {}),
+          ...(img?.renderAs === "file" ? { renderAs: "file" } : {}),
           ...(img.objectUrl ? { objectUrl: img.objectUrl } : {}),
         }));
       }
