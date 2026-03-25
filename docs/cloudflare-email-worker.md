@@ -40,11 +40,12 @@ If any Cloudflare dashboard action is still needed, the AI should batch those as
 - Inline or attached email images are forwarded into RemoteLab sessions as normal file attachments for the agent to inspect.
 - Edge config stays thin so provider migration remains easy.
 - The Worker forwards the raw message plus the real envelope recipient (`rcptTo`), which lets the local mailbox route aliases such as `rowan+trial6@domain` or direct instance addresses such as `trial6@domain` into the matching guest instance.
+- On the host, the mailbox runtime registry should include both new guest-instance records and any still-running legacy `trial/trial2/...` runtimes; the legacy bare `trial` runtime may also be exposed as `trial1@domain` for compatibility.
 
 ## [HUMAN] steps
 
 1. Authenticate Wrangler or Cloudflare if the machine is not already logged in.
-2. Create or confirm the Cloudflare Email Routing shape that matches the mailbox addressing mode. For `instanceAddressMode: plus`, keep a literal owner route such as `rowan@domain -> Worker` and enable Email Routing subaddressing so `rowan+trial6@domain` is accepted at SMTP time. For `instanceAddressMode: local_part`, create one literal Worker route per direct guest address such as `trial6@domain -> Worker`. A catch-all Worker route can still be useful for typo/privacy handling, but it does not reliably replace literal per-instance routes for direct guest addresses.
+2. Create or confirm the Cloudflare Email Routing shape that matches the mailbox addressing mode. For `instanceAddressMode: plus`, keep a literal owner route such as `rowan@domain -> Worker` and enable Email Routing subaddressing so `rowan+trial6@domain` is accepted at SMTP time. For `instanceAddressMode: local_part`, create one literal Worker route per direct guest address such as `trial6@domain -> Worker` or legacy compatibility aliases such as `trial1@domain -> Worker`. A catch-all Worker route can still be useful for typo/privacy handling, but it does not reliably replace literal per-instance routes for direct guest addresses.
 3. Provide any mailbox identity values the AI cannot infer, such as sender address, worker URL, or mailbox bridge URL.
 
 ## Cloudflare API auth note

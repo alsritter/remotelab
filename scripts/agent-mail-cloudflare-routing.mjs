@@ -14,6 +14,7 @@ import {
   loadOutboundConfig,
   normalizeInstanceAddressMode,
 } from '../lib/agent-mailbox.mjs';
+import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 
 const DEFAULT_OWNER_CONFIG_DIR = join(homedir(), '.config', 'remotelab');
 const DEFAULT_GUEST_REGISTRY_FILE = join(DEFAULT_OWNER_CONFIG_DIR, 'guest-instances.json');
@@ -93,17 +94,15 @@ function readJson(filePath, fallbackValue) {
 }
 
 function loadGuestRegistry(registryFile = DEFAULT_GUEST_REGISTRY_FILE) {
-  const records = readJson(registryFile, []);
-  if (!Array.isArray(records)) {
-    return [];
-  }
-  return records
+  return loadMailboxRuntimeRegistry({ registryFile })
     .map((record) => ({
       name: trimString(record?.name),
       hostname: trimString(record?.hostname),
       publicBaseUrl: trimString(record?.publicBaseUrl),
       localBaseUrl: trimString(record?.localBaseUrl),
       mailboxAddress: trimString(record?.mailboxAddress),
+      mailboxAliases: Array.isArray(record?.mailboxAliases) ? record.mailboxAliases : [],
+      mailboxNames: Array.isArray(record?.mailboxNames) ? record.mailboxNames : [trimString(record?.name)],
     }))
     .filter((record) => record.name);
 }
@@ -221,10 +220,17 @@ function buildStatusSummary({
   const outbound = loadOutboundConfig(rootDir);
   const workerConfig = loadWorkerConfig();
   const auth = loadCloudflareAuth(authFile);
-  const guestInstances = loadGuestRegistry().map((record) => ({
-    ...record,
-    mailboxAddress: record.mailboxAddress || buildGuestMailboxAddress(record.name, identity),
-  }));
+  const guestInstances = loadGuestRegistry().map((record) => {
+    const mailboxAddresses = dedupeStrings([
+      trimString(record.mailboxAddress),
+      ...(Array.isArray(record.mailboxNames) ? record.mailboxNames : [record.name]).map((mailboxName) => buildGuestMailboxAddress(mailboxName, identity)),
+    ]);
+    return {
+      ...record,
+      mailboxAddress: mailboxAddresses[0] || '',
+      mailboxAddresses,
+    };
+  });
   const domain = trimString(zone) || trimString(identity?.domain);
   const workerName = trimString(workerConfig?.name);
   const workerUrl = trimString(outbound?.workerBaseUrl);
@@ -233,7 +239,7 @@ function buildStatusSummary({
 
   const desiredAddresses = [
     trimString(identity?.address),
-    ...guestInstances.map((record) => record.mailboxAddress),
+    ...guestInstances.flatMap((record) => record.mailboxAddresses || []),
   ].filter(Boolean);
   const desiredPlan = buildDesiredCloudflarePlan({
     zone: domain,
@@ -323,7 +329,7 @@ function printStatusSummary(summary, asJson = false) {
   if (summary.guestInstances.length) {
     console.log('\nGuest instances:');
     for (const record of summary.guestInstances) {
-      console.log(`- ${record.name}: ${record.mailboxAddress}`);
+      console.log(`- ${record.name}: ${(record.mailboxAddresses || [record.mailboxAddress]).filter(Boolean).join(', ')}`);
     }
   }
 

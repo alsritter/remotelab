@@ -101,7 +101,8 @@ Key design choices:
 - The mailbox keeps one primary identity such as `rowan@jiujianian.dev`.
 - Guest instances can be addressed through plus aliases such as `rowan+trial6@jiujianian.dev`.
 - When the mailbox identity uses `instanceAddressMode: local_part`, guest instances can instead use direct addresses such as `trial6@jiujianian.dev`.
-- Cloudflare forwards the real envelope recipient (`rcptTo`) to the local bridge, and the local mailbox worker resolves `trial6` against `~/.config/remotelab/guest-instances.json`.
+- Cloudflare forwards the real envelope recipient (`rcptTo`) to the local bridge, and the local mailbox worker resolves `trial6` against the host mailbox runtime registry, which merges `~/.config/remotelab/guest-instances.json` with legacy `trial/trial2/...` runtimes discovered from LaunchAgents and local instance roots.
+- On this machine, the legacy bare `trial` runtime is also exposed as a compatibility mailbox alias `trial1@...`, so the old first-trial instance can receive mail without being renamed.
 - When the guest instance exists, the worker uses that instance's `localBaseUrl` and `authFile` automatically, so a new guest instance naturally gains a matching inbound email alias without a separate mailbox account.
 - Direct per-instance addresses work best as one literal Worker route per guest address. Plus aliases such as `rowan+trial6@...` require Email Routing subaddressing to be enabled. A catch-all Worker route can still help with typo/privacy handling, but it does not replace literal direct-address routes.
 - On this machine, the Cloudflare Email Routing API does not accept the OAuth token from `wrangler login`; use `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_GLOBAL_API_KEY`/`CLOUDFLARE_API_KEY` plus `CLOUDFLARE_EMAIL`.

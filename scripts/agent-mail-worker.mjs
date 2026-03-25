@@ -6,6 +6,7 @@ import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import { AUTH_FILE } from '../lib/config.mjs';
+import { findMailboxRuntimeByName, loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 import {
   APPROVED_QUEUE,
   DEFAULT_ROOT_DIR,
@@ -133,22 +134,18 @@ function sameBaseUrl(leftValue, rightValue) {
 }
 
 function loadGuestRegistry() {
-  const records = readJsonFile(process.env.REMOTELAB_GUEST_REGISTRY_FILE || DEFAULT_GUEST_REGISTRY_FILE, []);
-  if (!Array.isArray(records)) return [];
-  return records
-    .map((record) => ({
-      name: trimString(record?.name).toLowerCase(),
-      authFile: normalizeAuthFile(record?.authFile),
-      localBaseUrl: trimString(record?.localBaseUrl),
-      publicBaseUrl: trimString(record?.publicBaseUrl),
-    }))
-    .filter((record) => record.name);
+  return loadMailboxRuntimeRegistry({
+    registryFile: process.env.REMOTELAB_GUEST_REGISTRY_FILE || DEFAULT_GUEST_REGISTRY_FILE,
+  }).map((record) => ({
+    ...record,
+    authFile: normalizeAuthFile(record?.authFile),
+    localBaseUrl: trimString(record?.localBaseUrl),
+    publicBaseUrl: trimString(record?.publicBaseUrl),
+  }));
 }
 
 function findGuestInstanceByName(name, registry = loadGuestRegistry()) {
-  const normalizedName = trimString(name).toLowerCase();
-  if (!normalizedName) return null;
-  return registry.find((record) => record.name === normalizedName) || null;
+  return findMailboxRuntimeByName(name, registry);
 }
 
 function findGuestInstanceByBaseUrl(baseUrl, registry = loadGuestRegistry()) {
