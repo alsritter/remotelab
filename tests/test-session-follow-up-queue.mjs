@@ -82,6 +82,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function safeRm(target, attempts = 6, delayMs = 120) {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (error?.code !== 'ENOTEMPTY' && error?.code !== 'EBUSY') {
+        throw error;
+      }
+      await sleep(delayMs * (i + 1));
+    }
+  }
+  rmSync(target, { recursive: true, force: true });
+}
+
 async function waitFor(predicate, description, timeoutMs = 8000, intervalMs = 25) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -192,5 +207,5 @@ try {
 } finally {
   killAll();
   await sleep(250);
-  rmSync(home, { recursive: true, force: true });
+  await safeRm(home);
 }
