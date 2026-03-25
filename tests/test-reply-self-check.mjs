@@ -23,15 +23,21 @@ const isReplyReviewPrompt = prompt.includes("You are RemoteLab's hidden end-of-t
 const isRepairPrompt = prompt.includes('You are continuing the same user-facing reply after a hidden self-check found an avoidable early stop.');
 const prefersContinuationWithoutExplicitBlocker = prompt.includes('no explicit user-side blocker');
 const flagsAnalysisWithoutExecution = prompt.includes('stopping after analysis when execution was still possible');
+const hasBranchFirstRule = prompt.includes('real logical fork or forced human checkpoint');
 const prefersDoingWork = prompt.includes('Prefer doing the work over describing what you would do.');
 const hasOpenOfferHardRule = prompt.includes('A reply that ends with an open offer or permission request');
 const replacesOpenOfferWithResult = prompt.includes('Replace any prior open offer or permission request with the actual next action or result now.');
+const avoidsFakeChoiceRepair = prompt.includes('Do not turn a single-track task into a menu of options');
 
 let threadId = 'main-thread';
 let items = [{ type: 'agent_message', text: '我已经分析了机制问题。下一条我可以直接给你那份极短执行守则。' }];
 
 if (prompt.includes('开放式邀约场景')) {
   items = [{ type: 'agent_message', text: '我已经整理好了，如果你愿意我现在就把最终结论直接发出来。' }];
+}
+
+if (prompt.includes('伪分叉场景')) {
+  items = [{ type: 'agent_message', text: '我先停一下，这里好像有几个方向，你选一个我再继续。' }];
 }
 
 if (isWorkflowPrompt) {
@@ -45,6 +51,7 @@ if (isWorkflowPrompt) {
   const isChecklistScenario = prompt.includes('todo checklist');
   const isExplicitBlockerScenario = prompt.includes('危险删除场景');
   const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
+  const isPseudoForkScenario = prompt.includes('你选一个我再继续');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
   items = [{
@@ -75,6 +82,16 @@ if (isWorkflowPrompt) {
           ? '直接把最终结论给出来，不要再征求许可。'
           : '',
       }
+      : isPseudoForkScenario
+      ? {
+        action: hasBranchFirstRule ? 'continue' : 'accept',
+        reason: hasBranchFirstRule
+          ? '这不是需要用户拍板的真实分叉，应该沿单流程继续。'
+          : 'review prompt missed the branch-first continuation rule.',
+        continuationPrompt: hasBranchFirstRule
+          ? '不要让用户选方向，直接给出先判断真实分叉、没有就继续的原则。'
+          : '',
+      }
       : {
         action: prefersContinuationWithoutExplicitBlocker && flagsAnalysisWithoutExecution ? 'continue' : 'accept',
         reason: prefersContinuationWithoutExplicitBlocker && flagsAnalysisWithoutExecution
@@ -89,6 +106,7 @@ if (isWorkflowPrompt) {
   threadId = 'repair-thread';
   const isChecklistScenario = prompt.includes('todo checklist');
   const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
+  const isPseudoForkScenario = prompt.includes('你选一个我再继续');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
   items = [{
@@ -101,6 +119,10 @@ if (isWorkflowPrompt) {
       ? (replacesOpenOfferWithResult
         ? '最终结论：默认直接做；只有在确实缺少用户输入时才停下来。'
         : '如果你愿意我可以继续把最终结论发出来。')
+      : isPseudoForkScenario
+      ? (avoidsFakeChoiceRepair
+        ? '最终原则：先判断有没有真实分叉；没有就直接继续，不要把单流程任务伪装成“你选一下方向”。'
+        : '这里有几个方向，你先选一个我再继续。')
       : (prefersDoingWork
         ? '极短执行守则：默认先做完再汇报；除非高风险、真歧义、缺关键信息，否则不要停；不要用“如果你愿意我下一条再做”作为结尾。'
         : '我会继续把极短执行守则补出来。'),
@@ -285,6 +307,60 @@ try {
     openOfferAssistantTexts.some((text) => text.includes('如果你愿意我可以继续把最终结论发出来')),
     false,
     'repair continuation should replace the open offer instead of repeating it',
+  );
+
+  const pseudoForkSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Pseudo Fork', {
+    group: 'RemoteLab',
+    description: 'Verify self-check continues through a fake choice when the task is still a single flow.',
+  });
+
+  await sendMessage(pseudoForkSession.id, '伪分叉场景：这是单流程任务，不要停在让我选方向。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const pseudoForkHistory = await getHistory(pseudoForkSession.id);
+      return pseudoForkHistory.some((event) => event.type === 'message' && event.role === 'assistant' && (event.content || '').includes('最终原则：先判断有没有真实分叉'));
+    },
+    'self-check should auto-continue through a fake branch pause when no real fork exists',
+  );
+
+  await waitFor(
+    async () => (await getSession(pseudoForkSession.id))?.activity?.run?.state === 'idle',
+    'pseudo-fork session should become idle after the automatic follow-up reply',
+  );
+
+  const pseudoForkHistory = await getHistory(pseudoForkSession.id);
+  const pseudoForkStatusTexts = pseudoForkHistory
+    .filter((event) => event.type === 'status')
+    .map((event) => event.content || '');
+  const pseudoForkAssistantTexts = pseudoForkHistory
+    .filter((event) => event.type === 'message' && event.role === 'assistant')
+    .map((event) => event.content || '');
+
+  assert.ok(
+    pseudoForkStatusTexts.includes('Assistant self-check: reviewing the latest reply for early stop…'),
+    'pseudo-fork scenario should still run the self-check reviewer',
+  );
+  assert.ok(
+    pseudoForkStatusTexts.some((text) => text.startsWith('Assistant self-check: continuing automatically — ')),
+    'pseudo-fork scenario should trigger automatic continuation',
+  );
+  assert.ok(
+    pseudoForkAssistantTexts.some((text) => text.includes('你选一个我再继续')),
+    'history should keep the original fake-choice reply',
+  );
+  assert.ok(
+    pseudoForkAssistantTexts.some((text) => text.includes('最终原则：先判断有没有真实分叉')),
+    'history should include the automatic continuation that restores the single-flow principle',
+  );
+  assert.equal(
+    pseudoForkAssistantTexts.some((text) => text.includes('这里有几个方向，你先选一个我再继续。')),
+    false,
+    'repair continuation should not repeat the fake choice prompt',
   );
 
   const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Explicit Blocker', {

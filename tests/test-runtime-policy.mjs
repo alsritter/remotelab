@@ -76,6 +76,16 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Judge pauses branch-first: the decision target is not whether to continue but whether a real logical fork, missing required input, or forced human checkpoint actually exists/,
+    'default Codex developer instructions should frame pauses around real forks or blockers rather than generic caution',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /If the task remains on a single obvious track, treat the current request as standing authorization and continue without asking permission/,
+    'default Codex developer instructions should keep single-track work moving without extra permission asks',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /lead with current execution state, then whether the user is needed now or the work can stay parked for later/,
     'default Codex developer instructions should enforce state-first summaries and handoffs',
   );
@@ -98,6 +108,16 @@ try {
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /Do not assume remote users can browse local folders, inspect this computer, or pick up files from host-only paths/,
     'manager runtime boundary should block assumptions of direct host access for remote users',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /Judge pauses branch-first: do not ask whether to continue until you have first decided whether a real logical fork or forced human checkpoint exists/,
+    'turn-level policy reminder should require branch-first pause decisions',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /If the work is still on a single obvious track, treat the current request as standing authorization and keep going/,
+    'turn-level policy reminder should keep single-track work moving without extra permission checks',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,

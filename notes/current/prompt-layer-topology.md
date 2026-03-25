@@ -116,6 +116,16 @@ A session is not only a chat transcript. It is a workstream container. When one 
 
 That keeps each context tighter and makes continuity cleaner.
 
+## Continuation gate
+
+The continuation decision should be branch-first, not permission-first.
+
+- do not frame the core question as "should the agent continue"
+- first decide whether a real logical fork or forced human checkpoint exists
+- if the work is still a single-track flow, treat the user's clear request as standing authorization and keep going
+- involve the user when branch choice materially changes execution, when destructive / irreversible action needs confirmation, or when required input / access is truly missing
+- do not invent a menu of options just to feel cautious when the task already has a natural default path
+
 ## Prompt-writing rule
 
 Prompt layers should synchronize principles and invariants, not narrate every action as a hidden checklist.
