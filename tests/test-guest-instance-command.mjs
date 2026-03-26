@@ -10,6 +10,7 @@ import {
   buildGuestMailboxAddress,
   formatGuestInstance,
   planGuestRuntimeDefaults,
+  pickNextTrialInstanceName,
   syncGuestMailboxProvisioning,
 } from '../lib/guest-instance-command.mjs';
 import {
@@ -49,6 +50,11 @@ ingress:
 
 assert.equal(sanitizeGuestInstanceName(' Trial 4 '), 'trial-4');
 assert.equal(sanitizeGuestInstanceName('试用 用户'), '');
+assert.equal(pickNextTrialInstanceName([]), 'trial1');
+assert.equal(pickNextTrialInstanceName(['trial']), 'trial2');
+assert.equal(pickNextTrialInstanceName(['trial1', 'trial2']), 'trial3');
+assert.equal(pickNextTrialInstanceName([{ name: 'trial2' }, { name: 'demo' }]), 'trial3');
+assert.equal(pickNextTrialInstanceName(['demo', 'trial4']), 'trial5');
 assert.equal(
   buildGuestMailboxAddress('trial16', { localPart: 'rowan', domain: 'jiujianian.dev' }),
   'rowan+trial16@jiujianian.dev',

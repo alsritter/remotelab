@@ -268,7 +268,7 @@ remotelab set-password         设置用户名和密码登录
 remotelab --help               显示帮助
 ```
 
-如果你想在同一台机器上快速开一套可分享的隔离环境，可以用 `remotelab guest-instance create <name>`。它会为这个访客实例单独准备 `REMOTELAB_INSTANCE_ROOT`、独立的 launchd 服务，以及可选的 Cloudflare 子域名，同时不混入 owner 主实例的 chat history 和 memory。如果 agent mailbox 已初始化，`create` 和 `show` 还会直接打印这个实例对应的默认收件地址，比如 `rowan+trial4@example.com` 或 `trial4@example.com`；具体格式取决于 mailbox identity 的 `instanceAddressMode`。
+如果要把试用用户开通流程固定下来，默认优先用 `remotelab guest-instance create-trial`。它会自动选择下一个标准的 `trialN` 名称、分配安全端口、写好 Cloudflare hostname / tunnel ingress，并在 mailbox worker 已配置时顺手同步这个实例的收件地址。只有在你明确想要自定义实例名时，再用 `remotelab guest-instance create <name>`。如果 agent mailbox 已初始化，`create`、`create-trial` 和 `show` 都会直接打印这个实例对应的默认收件地址，比如 `rowan+trial4@example.com` 或 `trial4@example.com`；具体格式取决于 mailbox identity 的 `instanceAddressMode`。当 Cloudflare mailbox worker 已配置好时，创建流程也会自动尝试同步 Email Routing，这样每个新实例默认都会得到一个可用的对外收件地址；只有你明确想跳过这一步时，才传 `--no-mailbox-sync`。
 
 如果机器上还留着早期那种按实例复制出来的 runtime（例如 `remotelab-trial-runtime`），可以运行 `remotelab guest-instance converge <name>` 或 `remotelab guest-instance converge --all`。它会保持原来的端口、域名、登录信息、config 和 memory 目录不变，只把 launch agent 的代码入口切回当前的 `~/code/remotelab`，这样以后代码更新就能统一落到所有实例上，而不用改用户手里的链接。
 

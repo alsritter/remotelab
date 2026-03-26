@@ -221,6 +221,132 @@ show_logs() {
   tail -n 80 "$LOG_PATH"
 }
 
+read_config_value() {
+  local expression
+  expression="$1"
+  "$NODE_BIN" -e "const fs=require('fs'); const cfg=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const value=(${expression}); if (value === undefined || value === null) process.exit(0); process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value));" "$CONFIG_PATH"
+}
+
+resolve_asr_python() {
+  if [[ -n "${VOICE_CONNECTOR_ASR_PYTHON:-}" ]]; then
+    printf '%s\n' "$VOICE_CONNECTOR_ASR_PYTHON"
+    return 0
+  fi
+  if [[ -x "$HOME/.tmp/asr-venv/bin/python" ]]; then
+    printf '%s\n' "$HOME/.tmp/asr-venv/bin/python"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return 0
+  fi
+  return 1
+}
+
+run_input_probe() {
+  local python_bin
+  if ! python_bin="$(resolve_asr_python)"; then
+    echo "input probe unavailable: no Python runtime found" >&2
+    return 1
+  fi
+  "$python_bin" "$ROOT_DIR/scripts/voice-utterance-loop.py" --probe-input
+}
+
+run_downstream_check() {
+  local prompt output
+  prompt="$1"
+  output="$($NODE_BIN "$ROOT_DIR/scripts/voice-connector.mjs" --config "$CONFIG_PATH" --text "$prompt" --no-speak 2>&1)" || {
+    printf '%s\n' "$output"
+    return 1
+  }
+  printf '%s\n' "$output"
+  printf '%s\n' "$output" | rg -q '语音后半段链路正常'
+}
+
+run_wake_self_check() {
+  local prompt wake_command wake_keyword voice_name temp_dir audio_path wake_output wake_event connector_output
+  prompt="$1"
+  wake_command="$(read_config_value 'cfg?.wake?.command || ""')"
+  wake_keyword="$(read_config_value 'cfg?.wake?.keyword || ""')"
+  if [[ -z "$wake_command" || -z "$wake_keyword" ]]; then
+    echo "wake self-check unavailable: wake command or keyword is missing" >&2
+    return 1
+  fi
+  if [[ "$(uname -s)" != "Darwin" ]] || ! command -v say >/dev/null 2>&1; then
+    echo "wake self-check unavailable: synthetic wake audio is only wired for macOS with 'say'" >&2
+    return 1
+  fi
+
+  temp_dir="$(mktemp -d)"
+  audio_path="$temp_dir/voice-self-check.aiff"
+  voice_name="${VOICE_CONNECTOR_SELF_CHECK_VOICE:-Tingting}"
+  if ! say -v "$voice_name" -o "$audio_path" "${wake_keyword}${prompt}" >/dev/null 2>&1; then
+    if ! say -o "$audio_path" "${wake_keyword}${prompt}" >/dev/null 2>&1; then
+      rm -rf "$temp_dir"
+      echo "wake self-check unavailable: failed to synthesize test audio" >&2
+      return 1
+    fi
+  fi
+
+  wake_output="$(bash -lc "$wake_command --test-file $(printf '%q' "$audio_path")" 2>&1)" || {
+    printf '%s\n' "$wake_output"
+    rm -rf "$temp_dir"
+    return 1
+  }
+  printf '%s\n' "$wake_output"
+  wake_event="$(printf '%s\n' "$wake_output" | awk '/^\{/{line=$0} END{print line}')"
+  if [[ -z "$wake_event" ]]; then
+    rm -rf "$temp_dir"
+    echo "wake self-check failed: wake command did not emit an event" >&2
+    return 1
+  fi
+
+  connector_output="$(printf '%s\n' "$wake_event" | $NODE_BIN "$ROOT_DIR/scripts/voice-connector.mjs" --config "$CONFIG_PATH" --stdin --no-speak 2>&1)" || {
+    printf '%s\n' "$connector_output"
+    rm -rf "$temp_dir"
+    return 1
+  }
+  printf '%s\n' "$connector_output"
+  rm -rf "$temp_dir"
+  printf '%s\n' "$connector_output" | rg -q '语音后半段链路正常'
+}
+
+check_instance() {
+  local prompt input_ok downstream_ok
+  prompt='这是一次语音链路自检，请只回复：语音后半段链路正常。'
+  input_ok=0
+  downstream_ok=0
+
+  echo "voice connector self-check"
+  echo "config: $CONFIG_PATH"
+
+  echo "--- input probe ---"
+  if run_input_probe; then
+    input_ok=1
+  fi
+
+  echo "--- wake simulation ---"
+  if run_wake_self_check "$prompt"; then
+    downstream_ok=1
+  else
+    echo "--- direct downstream fallback ---"
+    if run_downstream_check "$prompt"; then
+      downstream_ok=1
+    fi
+  fi
+
+  if [[ "$input_ok" -eq 1 && "$downstream_ok" -eq 1 ]]; then
+    echo "self-check result: live mic and downstream chain look healthy"
+    return 0
+  fi
+  if [[ "$input_ok" -ne 1 && "$downstream_ok" -eq 1 ]]; then
+    echo "self-check result: downstream chain is healthy, but no live input device is currently available"
+    return 2
+  fi
+  echo "self-check result: voice chain check failed"
+  return 1
+}
+
 case "$ACTION" in
   start)
     start_instance
@@ -238,8 +364,11 @@ case "$ACTION" in
   logs)
     show_logs
     ;;
+  check)
+    check_instance
+    ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|logs}" >&2
+    echo "usage: $0 {start|stop|restart|status|logs|check}" >&2
     exit 1
     ;;
 esac

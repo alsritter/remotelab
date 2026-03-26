@@ -37,6 +37,10 @@ except Exception:
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo-q4"
 
 
+class SounddeviceInputUnavailableError(RuntimeError):
+    pass
+
+
 def trim(value):
     return str(value or "").strip()
 
@@ -220,6 +224,198 @@ def default_input_source(backend):
     raise RuntimeError(f"Unsupported input backend: {backend}")
 
 
+def sounddevice_device_value(device, key, default=None):
+    try:
+        return device[key]
+    except Exception:
+        return default
+
+
+def coerce_sounddevice_device_index(value):
+    if value is None:
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized >= 0 else None
+
+
+def sounddevice_default_device_values():
+    if sd is None:
+        return None, None
+    default_device = getattr(sd.default, "device", None)
+    try:
+        input_value = default_device[0]
+    except Exception:
+        pass
+    else:
+        try:
+            output_value = default_device[1]
+        except Exception:
+            output_value = None
+        return input_value, output_value
+    return default_device, default_device
+
+
+def sounddevice_default_device_indexes():
+    input_value, output_value = sounddevice_default_device_values()
+    return coerce_sounddevice_device_index(input_value), coerce_sounddevice_device_index(output_value)
+
+
+def list_sounddevice_devices():
+    if sd is None:
+        return []
+    devices = []
+    default_input_index, default_output_index = sounddevice_default_device_indexes()
+    try:
+        hostapis = list(sd.query_hostapis())
+    except Exception:
+        hostapis = []
+    for index, device in enumerate(sd.query_devices()):
+        hostapi_index = sounddevice_device_value(device, "hostapi")
+        hostapi_name = ""
+        if isinstance(hostapi_index, int) and 0 <= hostapi_index < len(hostapis):
+            hostapi_name = trim(sounddevice_device_value(hostapis[hostapi_index], "name"))
+        devices.append({
+            "index": index,
+            "name": trim(sounddevice_device_value(device, "name")),
+            "max_input_channels": int(sounddevice_device_value(device, "max_input_channels", 0) or 0),
+            "max_output_channels": int(sounddevice_device_value(device, "max_output_channels", 0) or 0),
+            "default_samplerate": sounddevice_device_value(device, "default_samplerate"),
+            "hostapi": hostapi_index,
+            "hostapiName": hostapi_name,
+            "isDefaultInput": index == default_input_index,
+            "isDefaultOutput": index == default_output_index,
+        })
+    return devices
+
+
+def list_sounddevice_input_devices(devices=None):
+    normalized_devices = devices if devices is not None else list_sounddevice_devices()
+    return [device for device in normalized_devices if int(device.get("max_input_channels") or 0) > 0]
+
+
+def format_sounddevice_device(device):
+    if not device:
+        return "(unknown device)"
+    label = f'{device.get("index")}: {trim(device.get("name")) or "(unnamed device)"}'
+    hostapi_name = trim(device.get("hostapiName"))
+    if hostapi_name:
+        label = f"{label} [{hostapi_name}]"
+    return label
+
+
+def format_sounddevice_device_list(devices):
+    return ", ".join(format_sounddevice_device(device) for device in devices if device) or "none"
+
+
+def probe_sounddevice_input(source=None):
+    if sd is None:
+        return {
+            "ok": False,
+            "selectedDevice": None,
+            "devices": [],
+            "inputDevices": [],
+            "error": "sounddevice is unavailable in the current Python environment",
+        }
+
+    try:
+        devices = list_sounddevice_devices()
+    except Exception as error:
+        return {
+            "ok": False,
+            "selectedDevice": None,
+            "devices": [],
+            "inputDevices": [],
+            "error": f"Failed to enumerate sounddevice devices: {error}",
+        }
+
+    input_devices = list_sounddevice_input_devices(devices)
+    raw_default_input, _raw_default_output = sounddevice_default_device_values()
+    default_input_index, _default_output_index = sounddevice_default_device_indexes()
+    selected = None
+    normalized_source = trim(source)
+    error_message = ""
+
+    if normalized_source:
+        lowered_source = normalized_source.lower()
+        if lowered_source in {"default", "system"}:
+            if default_input_index is not None:
+                selected = next((device for device in input_devices if device["index"] == default_input_index), None)
+            if selected is None and input_devices:
+                selected = input_devices[0]
+        else:
+            requested_index = coerce_sounddevice_device_index(normalized_source)
+            if requested_index is not None:
+                selected = next((device for device in devices if device["index"] == requested_index), None)
+                if selected is None:
+                    error_message = f"Requested input device {normalized_source} is not present."
+                elif int(selected.get("max_input_channels") or 0) <= 0:
+                    error_message = f"Requested input device {normalized_source} is not input-capable: {format_sounddevice_device(selected)}."
+                    selected = None
+            else:
+                normalized_match = normalize_for_match(normalized_source)
+                exact_matches = [
+                    device for device in input_devices
+                    if normalize_for_match(device.get("name")) == normalized_match
+                ]
+                partial_matches = [
+                    device for device in input_devices
+                    if normalized_match and normalized_match in normalize_for_match(device.get("name"))
+                ]
+                if len(exact_matches) == 1:
+                    selected = exact_matches[0]
+                elif len(exact_matches) > 1:
+                    error_message = (
+                        f"Requested input device '{normalized_source}' matches multiple devices: "
+                        f"{format_sounddevice_device_list(exact_matches)}."
+                    )
+                elif len(partial_matches) == 1:
+                    selected = partial_matches[0]
+                elif len(partial_matches) > 1:
+                    error_message = (
+                        f"Requested input device '{normalized_source}' matches multiple devices: "
+                        f"{format_sounddevice_device_list(partial_matches)}."
+                    )
+                else:
+                    error_message = f"Requested input device '{normalized_source}' was not found."
+    else:
+        if default_input_index is not None:
+            selected = next((device for device in input_devices if device["index"] == default_input_index), None)
+        if selected is None and input_devices:
+            selected = input_devices[0]
+
+    if selected is not None:
+        try:
+            if hasattr(sd, "check_input_settings"):
+                sd.check_input_settings(device=selected["index"], channels=1, dtype="float32")
+        except Exception as error:
+            error_message = f"Input device is visible but not ready: {format_sounddevice_device(selected)} ({error})"
+            selected = None
+
+    if selected is None and not error_message:
+        default_display = raw_default_input if raw_default_input is not None else "unset"
+        if input_devices:
+            error_message = (
+                f"No usable sounddevice input device was selected. "
+                f"Default input is {default_display}; visible input devices: {format_sounddevice_device_list(input_devices)}."
+            )
+        else:
+            error_message = (
+                f"No sounddevice input device is currently available. "
+                f"Default input is {default_display}; visible devices: {format_sounddevice_device_list(devices)}."
+            )
+
+    return {
+        "ok": selected is not None,
+        "selectedDevice": selected,
+        "devices": devices,
+        "inputDevices": input_devices,
+        "error": error_message,
+    }
+
+
 def build_ffmpeg_input_args(backend, source):
     normalized_backend = trim(backend) or default_input_backend()
     normalized_source = trim(source) or default_input_source(normalized_backend)
@@ -251,13 +447,7 @@ def record_audio_sounddevice(output_path, *, duration_seconds, source=None):
     if sd is None or sf is None or np is None:
         raise RuntimeError("sounddevice backend requires sounddevice, soundfile, and numpy")
     output_path = str(Path(output_path).expanduser().resolve())
-    normalized_source = trim(source)
-    device = None
-    if normalized_source:
-        try:
-            device = int(normalized_source)
-        except ValueError:
-            device = normalized_source
+    device = resolve_sounddevice_device(source)
     sample_rate = 16000
     frames = max(1, int(round(float(duration_seconds) * sample_rate)))
     audio = sd.rec(
@@ -304,15 +494,11 @@ def record_audio(output_path, *, duration_seconds, backend=None, source=None):
 
 
 def resolve_sounddevice_device(source=None):
-    normalized_source = trim(source)
-    if not normalized_source:
-        normalized_source = trim(default_input_source("sounddevice"))
-    if not normalized_source:
-        return None
-    try:
-        return int(normalized_source)
-    except ValueError:
-        return normalized_source
+    probe = probe_sounddevice_input(source)
+    selected = probe.get("selectedDevice")
+    if not selected:
+        raise SounddeviceInputUnavailableError(probe.get("error") or "No sounddevice input device is currently available")
+    return int(selected["index"])
 
 
 def chunk_level(chunk):

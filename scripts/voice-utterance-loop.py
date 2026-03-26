@@ -9,12 +9,16 @@ import uuid
 
 from voice_audio_common import (
     DEFAULT_MODEL,
+    SounddeviceInputUnavailableError,
     capture_until_silence,
     default_input_backend,
     emit_json,
     extract_trailing_text,
     find_wake_phrase_match,
+    format_sounddevice_device,
+    list_sounddevice_devices,
     play_ack_sound,
+    probe_sounddevice_input,
     resolve_trigger_transcript,
     transcribe_audio,
     trim,
@@ -52,6 +56,8 @@ def parse_args():
     parser.add_argument("--wake-window-extra", type=int, default=1)
     parser.add_argument("--connector-id", default=os.environ.get("REMOTELAB_VOICE_CONNECTOR_ID", ""))
     parser.add_argument("--room-name", default=os.environ.get("REMOTELAB_VOICE_ROOM_NAME", ""))
+    parser.add_argument("--list-input-devices", action="store_true")
+    parser.add_argument("--probe-input", action="store_true")
     parser.add_argument("--test-file", default="")
     return parser.parse_args()
 
@@ -125,19 +131,57 @@ def main():
     last_emit_at = 0.0
     active_backend = trim(args.input_backend) or default_input_backend()
 
-    print(
-        f"[voice-utterance-loop] listening via {active_backend} + mlx_whisper"
-        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms, continuation={args.continuation_window_ms}ms"
-        f"{', wake=' + args.wake_phrase if trim(args.wake_phrase) else ''})",
-        file=sys.stderr,
-    )
-
     def stop(*_):
         nonlocal running
         running = False
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
+
+    if args.list_input_devices:
+        devices = list_sounddevice_devices()
+        if not devices:
+            print("[voice-utterance-loop] no sounddevice devices visible")
+            return
+        for device in devices:
+            capabilities = []
+            if int(device.get("max_input_channels") or 0) > 0:
+                capabilities.append(f'in={device["max_input_channels"]}')
+            if int(device.get("max_output_channels") or 0) > 0:
+                capabilities.append(f'out={device["max_output_channels"]}')
+            flags = []
+            if device.get("isDefaultInput"):
+                flags.append("default-input")
+            if device.get("isDefaultOutput"):
+                flags.append("default-output")
+            extras = ""
+            if capabilities or flags:
+                extras = f" ({', '.join(capabilities + flags)})"
+            print(f"{format_sounddevice_device(device)}{extras}")
+        return
+
+    if args.probe_input:
+        probe = probe_sounddevice_input(args.input_source)
+        if probe.get("ok") and probe.get("selectedDevice"):
+            print(f'[voice-utterance-loop] input device ready: {format_sounddevice_device(probe["selectedDevice"])}')
+            return
+        print(f'[voice-utterance-loop] {probe.get("error") or "input device probe failed"}', file=sys.stderr)
+        raise SystemExit(2)
+
+    if active_backend == "sounddevice":
+        probe = probe_sounddevice_input(args.input_source)
+        if probe.get("ok") and probe.get("selectedDevice"):
+            print(
+                f'[voice-utterance-loop] input device: {format_sounddevice_device(probe["selectedDevice"])}',
+                file=sys.stderr,
+            )
+
+    print(
+        f"[voice-utterance-loop] listening via {active_backend} + mlx_whisper"
+        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms, continuation={args.continuation_window_ms}ms"
+        f"{', wake=' + args.wake_phrase if trim(args.wake_phrase) else ''})",
+        file=sys.stderr,
+    )
 
     if trim(args.test_file):
         result = transcribe_audio(
@@ -230,6 +274,9 @@ def main():
             )
         except KeyboardInterrupt:
             running = False
+        except SounddeviceInputUnavailableError as error:
+            print(f"[voice-utterance-loop] {error}", file=sys.stderr)
+            time.sleep(5.0)
         except Exception as error:
             print(f"[voice-utterance-loop] {error}", file=sys.stderr)
             time.sleep(0.3)

@@ -9,11 +9,14 @@ import uuid
 
 from voice_audio_common import (
     DEFAULT_MODEL,
+    SounddeviceInputUnavailableError,
     default_input_backend,
     emit_json,
+    format_sounddevice_device,
     make_temp_wav,
     normalize_for_match,
     play_ack_sound,
+    probe_sounddevice_input,
     record_audio,
     resolve_trigger_transcript,
     transcribe_audio,
@@ -84,6 +87,14 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
+    if active_backend == "sounddevice":
+        probe = probe_sounddevice_input(args.input_source)
+        if probe.get("ok") and probe.get("selectedDevice"):
+            print(
+                f'[voice-wake-loop] input device: {format_sounddevice_device(probe["selectedDevice"])}',
+                file=sys.stderr,
+            )
+
     if args.test_trigger:
         play_ack_sound(args.ack_sound_path)
         emit_json(build_event(args, "", source="wake_test", recognition_mode="test", raw_transcript=args.phrase))
@@ -135,6 +146,9 @@ def main():
             emit_json(build_event(args, transcript, source="mlx_whisper_wake", recognition_mode="loop", raw_transcript=raw_text))
         except KeyboardInterrupt:
             running = False
+        except SounddeviceInputUnavailableError as error:
+            print(f"[voice-wake-loop] {error}", file=sys.stderr)
+            time.sleep(5.0)
         except Exception as error:
             print(f"[voice-wake-loop] {error}", file=sys.stderr)
             time.sleep(0.3)

@@ -279,9 +279,18 @@ try {
   assert.equal(terminal.state, 'completed', `run should complete: ${server.getStderr()}`);
   assert.ok((terminal.normalizedEventCount || 0) > 0, 'custom fast agent should emit normalized events');
 
-  const eventsRes = await request(port, 'GET', `/api/sessions/${session.id}/events`);
-  assert.equal(eventsRes.status, 200, 'events request should succeed');
-  assert.ok(Array.isArray(eventsRes.json.events), 'events response should contain an array');
+  let eventsRes = null;
+  await waitFor(async () => {
+    const res = await request(port, 'GET', `/api/sessions/${session.id}/events`);
+    if (res.status !== 200 || !Array.isArray(res.json?.events)) return false;
+    eventsRes = res;
+    return res.json.events.some(
+      (event) => event.type === 'message'
+        && event.role === 'assistant'
+        && /Fast agent completed\./.test(event.content || ''),
+    );
+  }, 'final assistant reply', 15000);
+  assert.ok(eventsRes, 'events request should succeed');
   assert.equal(
     eventsRes.json.events.some((event) => event.type === 'thinking_block' && Array.isArray(event.toolNames) && event.toolNames.includes('bash')),
     true,
