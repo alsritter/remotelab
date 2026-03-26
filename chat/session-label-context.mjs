@@ -4,6 +4,8 @@ import { join } from 'path';
 import { CHAT_SESSIONS_FILE, MEMORY_DIR } from '../lib/config.mjs';
 import { getContextHead } from './history.mjs';
 import { readJson } from './fs-utils.mjs';
+import { loadSessionsMeta } from './session-meta-store.mjs';
+import { normalizeSessionTaskCard } from './session-task-card.mjs';
 import {
   DEFAULT_SESSION_NAME,
   normalizeSessionDescription,
@@ -22,6 +24,29 @@ const MAX_SESSION_CATALOG_CHARS = 1600;
 const MAX_SESSION_CATALOG_ENTRIES = 12;
 const MAX_LINE_CHARS = 220;
 const MAX_EXECUTION_LINE_CHARS = 280;
+const MAX_RELATED_SESSION_IMPORT_CHARS = 2200;
+const MAX_RELATED_SESSION_IMPORTS = 2;
+const MAX_RELATED_SESSION_CANDIDATES = 6;
+const MAX_RELATED_SESSION_REASONS = 3;
+const MAX_RELATED_SESSION_TERMS = 8;
+const MAX_RELATED_SESSION_LIST_ITEMS = 2;
+const MAX_RELATED_SESSION_LINE_CHARS = 360;
+const GENERIC_SEARCH_TERMS = new Set([
+  'about',
+  'current',
+  'email',
+  'follow-up',
+  'followup',
+  'from',
+  'inbound',
+  'mail',
+  'message',
+  'new',
+  'reply',
+  'subject',
+  'thread',
+  'user',
+]);
 
 function normalizeInlineText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -55,6 +80,72 @@ function splitTriggerTerms(value) {
     .split(/[,，、;；]/)
     .map((term) => normalizeInlineText(term))
     .filter(Boolean);
+}
+
+function uniqueTerms(values, options = {}) {
+  const max = Number.isInteger(options.max) && options.max > 0
+    ? options.max
+    : 24;
+  const result = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(values) ? values : []) {
+    const normalized = normalizeInlineText(raw);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+    if (result.length >= max) break;
+  }
+  return result;
+}
+
+function splitSearchTerms(value, options = {}) {
+  const max = Number.isInteger(options.max) && options.max > 0
+    ? options.max
+    : 24;
+  const normalized = stripMarkdownNoise(value);
+  if (!normalized) return [];
+
+  const parts = [];
+  if (normalized.length <= 64) {
+    parts.push(normalized);
+  }
+  for (const term of normalized.split(/[\s,，、;；|/()（）[\]{}<>"'“”‘’]+/)) {
+    const next = normalizeInlineText(term);
+    if (!next || next.length < 2) continue;
+    parts.push(next);
+    if (parts.length >= max) break;
+  }
+  return uniqueTerms(parts, { max });
+}
+
+function collectObjectTextValues(value, result = [], maxItems = 12) {
+  if (!value || result.length >= maxItems) return result;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const normalized = normalizeInlineText(value);
+    if (normalized) result.push(normalized);
+    return result;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectObjectTextValues(item, result, maxItems);
+      if (result.length >= maxItems) break;
+    }
+    return result;
+  }
+  if (typeof value === 'object') {
+    for (const item of Object.values(value)) {
+      collectObjectTextValues(item, result, maxItems);
+      if (result.length >= maxItems) break;
+    }
+  }
+  return result;
+}
+
+function extractPrefixedLineValue(text, label) {
+  const match = String(text || '').match(new RegExp(`^\\s*-?\\s*${label}:\\s*(.+)$`, 'im'));
+  return normalizeInlineText(match?.[1] || '');
 }
 
 function expandHomePath(path) {
@@ -222,14 +313,16 @@ function buildScopeRouterPromptContext(markdown, context = {}) {
   return lines.join('\n');
 }
 
-function buildExecutionScopeRouterPromptContext(markdown, context = {}) {
+function selectExecutionScopeRouterEntries(markdown, context = {}) {
   const entries = parseScopeRouterEntries(markdown);
-  if (entries.length === 0) return '';
-
-  const selected = selectScopeRouterEntries(entries, context, {
+  if (entries.length === 0) return [];
+  return selectScopeRouterEntries(entries, context, {
     limit: MAX_EXECUTION_SCOPE_ROUTER_ENTRIES,
     allowFallback: false,
   });
+}
+
+function buildExecutionScopeRouterPromptContextFromEntries(selected) {
   if (selected.length === 0) return '';
 
   const lines = [
@@ -266,6 +359,281 @@ function buildExecutionScopeRouterPromptContext(markdown, context = {}) {
   }
 
   return lines.length > 2 ? lines.join('\n') : '';
+}
+
+function buildExecutionScopeRouterPromptContext(markdown, context = {}) {
+  return buildExecutionScopeRouterPromptContextFromEntries(
+    selectExecutionScopeRouterEntries(markdown, context),
+  );
+}
+
+function isUsefulSearchTerm(value) {
+  const normalized = normalizeInlineText(value).toLowerCase();
+  if (!normalized || normalized.length < 2) return false;
+  if (GENERIC_SEARCH_TERMS.has(normalized)) return false;
+  if (/^\d+$/.test(normalized)) return false;
+  return true;
+}
+
+function buildTaskCardSearchParts(taskCard) {
+  const normalized = normalizeSessionTaskCard(taskCard);
+  if (!normalized) return [];
+  return [
+    normalized.summary,
+    normalized.goal,
+    ...normalized.background,
+    ...normalized.rawMaterials,
+    ...normalized.assumptions,
+    ...normalized.knownConclusions,
+    ...normalized.nextSteps,
+    ...normalized.memory,
+    ...normalized.needsFromUser,
+  ].filter(Boolean);
+}
+
+function buildRelatedSessionHaystack(meta, contextHead = null) {
+  const parts = [
+    meta?.group,
+    meta?.name,
+    meta?.description,
+    meta?.appId,
+    meta?.appName,
+    meta?.sourceId,
+    meta?.sourceName,
+    meta?.externalTriggerId,
+    contextHead?.summary || '',
+    ...collectObjectTextValues(meta?.sourceContext, []),
+    ...buildTaskCardSearchParts(meta?.taskCard),
+  ].filter(Boolean);
+  return normalizeInlineText(parts.join(' ')).toLowerCase();
+}
+
+function addMatchReason(reasons, value) {
+  const normalized = normalizeInlineText(value);
+  if (!normalized) return;
+  const key = normalized.toLowerCase();
+  if (reasons.some((entry) => entry.toLowerCase() === key)) return;
+  reasons.push(normalized);
+}
+
+function buildExecutionRoutingTerms(sessionMeta, turnText) {
+  const parts = [
+    ...splitSearchTerms(extractPrefixedLineValue(turnText, 'From')),
+    ...splitSearchTerms(extractPrefixedLineValue(turnText, 'Subject')),
+    ...splitSearchTerms(sessionMeta?.description),
+    ...splitSearchTerms(sessionMeta?.name),
+    ...collectObjectTextValues(sessionMeta?.sourceContext, []).flatMap((value) => splitSearchTerms(value, { max: 4 })),
+  ].filter(isUsefulSearchTerm);
+  return uniqueTerms(parts, { max: MAX_RELATED_SESSION_TERMS });
+}
+
+function scoreScopeRouterRelatedSessionCandidate(
+  meta,
+  currentSessionMeta,
+  selectedEntries,
+  routingTerms,
+  contextHead = null,
+) {
+  const haystack = buildRelatedSessionHaystack(meta, contextHead);
+  if (!haystack) return { score: 0, reasons: [] };
+
+  let score = 0;
+  let textMatches = 0;
+  const reasons = [];
+
+  const currentTriggerId = normalizeInlineText(currentSessionMeta?.externalTriggerId).toLowerCase();
+  const candidateTriggerId = normalizeInlineText(meta?.externalTriggerId).toLowerCase();
+  if (currentTriggerId && candidateTriggerId && currentTriggerId === candidateTriggerId) {
+    score += 10;
+    textMatches += 1;
+    addMatchReason(reasons, 'same thread');
+  }
+
+  for (const entry of selectedEntries) {
+    const title = normalizeInlineText(entry?.title).toLowerCase();
+    if (title && haystack.includes(title)) {
+      score += 6;
+      textMatches += 1;
+      addMatchReason(reasons, entry.title);
+    }
+    let triggerHits = 0;
+    for (const trigger of entry?.triggers || []) {
+      const normalized = normalizeInlineText(trigger).toLowerCase();
+      if (!normalized || normalized.length < 2) continue;
+      if (!haystack.includes(normalized)) continue;
+      score += 3;
+      textMatches += 1;
+      triggerHits += 1;
+      addMatchReason(reasons, trigger);
+      if (triggerHits >= MAX_SCOPE_ROUTER_TRIGGERS) break;
+    }
+  }
+
+  let routingHits = 0;
+  for (const term of routingTerms) {
+    const normalized = normalizeInlineText(term).toLowerCase();
+    if (!normalized || normalized.length < 2) continue;
+    if (!haystack.includes(normalized)) continue;
+    score += 1;
+    textMatches += 1;
+    routingHits += 1;
+    addMatchReason(reasons, term);
+    if (routingHits >= MAX_RELATED_SESSION_TERMS) break;
+  }
+
+  if (textMatches === 0) {
+    return { score: 0, reasons: [] };
+  }
+
+  const currentSource = normalizeInlineText(currentSessionMeta?.sourceId || currentSessionMeta?.appId).toLowerCase();
+  const candidateSource = normalizeInlineText(meta?.sourceId || meta?.appId).toLowerCase();
+  if (currentSource && candidateSource && currentSource === candidateSource) {
+    score += 3;
+  }
+
+  const currentGroup = normalizeInlineText(currentSessionMeta?.group).toLowerCase();
+  const candidateGroup = normalizeInlineText(meta?.group).toLowerCase();
+  if (currentGroup && candidateGroup && currentGroup === candidateGroup) {
+    score += 2;
+  }
+
+  if (clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS)) {
+    score += 4;
+  }
+  if (normalizeSessionTaskCard(meta?.taskCard)) {
+    score += 2;
+  }
+
+  return {
+    score,
+    reasons: reasons.slice(0, MAX_RELATED_SESSION_REASONS),
+  };
+}
+
+function hasRelatedSessionMemory(meta, contextHead = null) {
+  if (clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS)) return true;
+  return !!normalizeSessionTaskCard(meta?.taskCard);
+}
+
+function formatRecencyDay(value) {
+  const time = Date.parse(String(value || '').trim());
+  if (!Number.isFinite(time)) return '';
+  return new Date(time).toISOString().slice(0, 10);
+}
+
+function buildRelatedSessionPromptContext(matches) {
+  if (!Array.isArray(matches) || matches.length === 0) return '';
+
+  const lines = [
+    'Recent related session imports for this turn (backend-selected cross-session packet):',
+    'Treat these as bounded carry-forward memory. Reuse them before broad search, but verify against the current sender, body, and attachments.',
+  ];
+
+  for (const match of matches) {
+    const taskCard = normalizeSessionTaskCard(match?.meta?.taskCard);
+    const label = match?.meta?.group
+      ? `[${match.meta.group}] ${match.meta.name || '(unnamed)'}`
+      : (match?.meta?.name || '(unnamed)');
+    const updatedDay = formatRecencyDay(match?.meta?.updatedAt || match?.meta?.created);
+    const contextSummary = clipText(match?.contextHead?.summary || '', 180);
+    const taskCardSummary = clipText(taskCard?.summary || '', 140);
+    const durableMemory = clipText(
+      (taskCard?.memory || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      120,
+    );
+    const knownConclusions = clipText(
+      (taskCard?.knownConclusions || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      120,
+    );
+    const nextSteps = clipText(
+      (taskCard?.nextSteps || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      120,
+    );
+
+    const parts = [label];
+    if (updatedDay) parts.push(`updated ${updatedDay}`);
+    if (Array.isArray(match?.reasons) && match.reasons.length > 0) {
+      parts.push(`matched via: ${clipText(match.reasons.join(', '), 80)}`);
+    }
+    if (contextSummary) {
+      parts.push(`summary: ${contextSummary}`);
+    }
+    if (taskCardSummary && taskCardSummary !== contextSummary) {
+      parts.push(`task card: ${taskCardSummary}`);
+    }
+    if (durableMemory) {
+      parts.push(`durable memory: ${durableMemory}`);
+    }
+    const executionCue = knownConclusions
+      ? `known conclusions: ${knownConclusions}`
+      : (nextSteps ? `next steps: ${nextSteps}` : '');
+    if (executionCue) {
+      parts.push(executionCue);
+    }
+
+    const line = clipText(`- ${parts.join(' — ')}`, MAX_RELATED_SESSION_LINE_CHARS);
+    if (!line) continue;
+    const nextText = `${lines.join('\n')}\n${line}`;
+    if (nextText.length > MAX_RELATED_SESSION_IMPORT_CHARS) break;
+    lines.push(line);
+  }
+
+  return lines.length > 2 ? lines.join('\n') : '';
+}
+
+async function loadExecutionRelatedSessionPromptContext(sessionMeta, turnText, selectedEntries) {
+  if (!sessionMeta?.id || !Array.isArray(selectedEntries) || selectedEntries.length === 0) {
+    return '';
+  }
+
+  const sessions = await loadSessionsMeta();
+  const routingTerms = buildExecutionRoutingTerms(sessionMeta, turnText);
+  const candidates = sessions
+    .filter((meta) => meta && meta.id !== sessionMeta.id && meta.archived !== true && !meta.internalRole)
+    .map((meta) => {
+      const scored = scoreScopeRouterRelatedSessionCandidate(meta, sessionMeta, selectedEntries, routingTerms);
+      return {
+        meta,
+        score: scored.score,
+        reasons: scored.reasons,
+      };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => (
+      (b.score - a.score)
+      || sortSessionsByRecency(a.meta, b.meta)
+    ))
+    .slice(0, MAX_RELATED_SESSION_CANDIDATES);
+
+  if (candidates.length === 0) return '';
+
+  const enriched = await Promise.all(candidates.map(async (entry) => {
+    const contextHead = await getContextHead(entry.meta.id);
+    const rescored = scoreScopeRouterRelatedSessionCandidate(
+      entry.meta,
+      sessionMeta,
+      selectedEntries,
+      routingTerms,
+      contextHead,
+    );
+    return {
+      meta: entry.meta,
+      contextHead,
+      score: rescored.score,
+      reasons: rescored.reasons,
+    };
+  }));
+
+  const matches = enriched
+    .filter((entry) => entry.score > 0)
+    .filter((entry) => hasRelatedSessionMemory(entry.meta, entry.contextHead))
+    .sort((a, b) => (
+      (b.score - a.score)
+      || sortSessionsByRecency(a.meta, b.meta)
+    ))
+    .slice(0, MAX_RELATED_SESSION_IMPORTS);
+
+  return buildRelatedSessionPromptContext(matches);
 }
 
 function sortSessionsByRecency(a, b) {
@@ -365,13 +733,32 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
   };
 }
 
-export async function loadExecutionScopeRouterPromptContext(sessionMeta, turnText) {
+export async function loadExecutionMemoryPromptContext(sessionMeta, turnText) {
   const projectsMarkdown = await readOptionalText(PROJECTS_MD);
-  return buildExecutionScopeRouterPromptContext(projectsMarkdown, {
+  const selected = selectExecutionScopeRouterEntries(projectsMarkdown, {
     folder: sessionMeta?.folder || '',
     name: sessionMeta?.name || '',
     group: sessionMeta?.group || '',
     description: sessionMeta?.description || '',
     turnText,
   });
+
+  if (selected.length === 0) {
+    return {
+      scopeRouter: '',
+      relatedSessions: '',
+    };
+  }
+
+  const scopeRouter = buildExecutionScopeRouterPromptContextFromEntries(selected);
+  const relatedSessions = await loadExecutionRelatedSessionPromptContext(sessionMeta, turnText, selected);
+  return {
+    scopeRouter,
+    relatedSessions,
+  };
+}
+
+export async function loadExecutionScopeRouterPromptContext(sessionMeta, turnText) {
+  const promptContext = await loadExecutionMemoryPromptContext(sessionMeta, turnText);
+  return promptContext.scopeRouter;
 }

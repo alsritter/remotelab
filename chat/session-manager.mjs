@@ -101,7 +101,7 @@ import {
   buildTaskCardPromptBlock,
   normalizeSessionTaskCard,
 } from './session-task-card.mjs';
-import { loadExecutionScopeRouterPromptContext } from './session-label-context.mjs';
+import { loadExecutionMemoryPromptContext } from './session-label-context.mjs';
 import {
   buildDelegationHandoff,
   clipCompactionSection,
@@ -2099,14 +2099,16 @@ async function maybePublishRunResultAssets(sessionId, run, manifest, normalizedE
 const MANAGER_TURN_POLICY_BLOCK = `Manager note: ${MANAGER_TURN_POLICY_REMINDER}`;
 
 async function buildManagerTurnContextText(session, text = '') {
-  const scopeRouter = session && !isInternalSession(session)
-    ? await loadExecutionScopeRouterPromptContext(session, text)
-    : '';
+  const promptContext = session && !isInternalSession(session)
+    ? await loadExecutionMemoryPromptContext(session, text)
+    : { scopeRouter: '', relatedSessions: '' };
+  const scopeRouter = promptContext.scopeRouter || '';
+  const relatedSessions = promptContext.relatedSessions || '';
   const memorySearchPolicy = scopeRouter
     ? [
       'Memory/search policy for this turn:',
-      '- Prefer carried context and matched scope-router hints before filesystem discovery.',
-      '- Open the referenced memory files or project docs for the best-matching hint before broad search.',
+      '- Prefer carried context, matched scope-router hints, and imported related-session memory before filesystem discovery.',
+      '- Reuse the best-matching summary, task card, or referenced memory/doc packet before broad search.',
       '- Use machine-wide search only after targeted context misses.',
     ].join('\n')
     : 'Memory/search policy for this turn: prefer targeted memory, referenced docs, or known project pointers before broad filesystem search. Use machine-wide search only as a last resort.';
@@ -2116,6 +2118,7 @@ async function buildManagerTurnContextText(session, text = '') {
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildTaskCardPromptBlock(session?.taskCard),
     scopeRouter,
+    relatedSessions,
     memorySearchPolicy,
   ].filter(Boolean).join('\n\n');
 }

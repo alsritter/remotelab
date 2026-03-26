@@ -105,6 +105,12 @@ process.env.PROMPT_LOG_FILE = promptLogPath;
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
 );
+const history = await import(
+  pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href
+);
+const sessionMetaStore = await import(
+  pathToFileURL(join(repoRoot, 'chat', 'session-meta-store.mjs')).href
+);
 
 const {
   createSession,
@@ -112,6 +118,8 @@ const {
   sendMessage,
   killAll,
 } = sessionManager;
+const { setContextHead } = history;
+const { mutateSessionMeta } = sessionMetaStore;
 
 async function waitFor(predicate, description, timeoutMs = 4000) {
   const start = Date.now();
@@ -123,13 +131,42 @@ async function waitFor(predicate, description, timeoutMs = 4000) {
 }
 
 try {
+  const previous = await createSession(tempHome, 'fake-codex', '历史报账规则', {
+    appId: 'email',
+    appName: 'Email',
+    sourceId: 'email',
+    sourceName: 'Email',
+    group: 'Mail',
+    description: 'Inbound email from finance@example.com about 报账规则',
+    externalTriggerId: 'email-thread:%3Cold-thread%40example.com%3E',
+  });
+  await mutateSessionMeta(previous.id, (draft) => {
+    draft.taskCard = {
+      mode: 'project',
+      summary: '沿用现有报账主表，不要新建文件。',
+      memory: ['所有报账都要追加到同一个 Excel 主表。'],
+      knownConclusions: ['图片票据要和文字说明逐项核对。'],
+      nextSteps: ['先看文字说明', '再录入金额和日期'],
+    };
+    return true;
+  });
+  await setContextHead(previous.id, {
+    mode: 'summary',
+    summary: '之前已经确认：报账邮件默认沿用现有主表追加，不重新建表。',
+    activeFromSeq: 0,
+    compactedThroughSeq: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'test',
+  });
+
   const session = await createSession(tempHome, 'fake-codex', '报账邮件处理', {
     appId: 'email',
     appName: 'Email',
     sourceId: 'email',
     sourceName: 'Email',
     group: 'Mail',
-    description: 'Inbound email from finance@example.com about 报账',
+    description: 'Inbound email from finance@example.com about 新报账',
+    externalTriggerId: 'email-thread:%3Cfresh-thread%40example.com%3E',
   });
 
   await sendMessage(
@@ -154,6 +191,12 @@ try {
   assert.match(promptLog, /first read: ~\/\.remotelab\/instances\/trial6\/memory\/tasks\/reimbursement-expense-workflow\.md/);
   assert.match(promptLog, /then inspect: ~\/\.remotelab\/instances\/trial6\/config\/file-assets\/reimbursement\/报账支出主表\.xlsx/);
   assert.match(promptLog, /default action: 收到新的报账邮件后/);
+  assert.match(promptLog, /Recent related session imports for this turn \(backend-selected cross-session packet\):/);
+  assert.match(promptLog, /\[Mail\] 历史报账规则/);
+  assert.match(promptLog, /matched via:/);
+  assert.match(promptLog, /之前已经确认：报账邮件默认沿用现有主表追加，不重新建表。/);
+  assert.match(promptLog, /沿用现有报账主表，不要新建文件。/);
+  assert.match(promptLog, /所有报账都要追加到同一个 Excel 主表。/);
   assert.match(promptLog, /Use machine-wide search only after targeted context misses\./);
   assert.match(promptLog, /For loosely structured inbound email, use the sender, subject, body, and attachments as routing clues/);
   assert.match(promptLog, /Prefer matched memory, project notes, and referenced files before broad local or machine-wide search\./);
