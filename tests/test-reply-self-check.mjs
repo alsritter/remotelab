@@ -17,6 +17,8 @@ const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
+const { mkdirSync, writeFileSync } = require('fs');
+const { dirname, join } = require('path');
 const prompt = process.argv[process.argv.length - 1] || '';
 const isWorkflowPrompt = prompt.includes('You are updating RemoteLab workflow state for a developer session');
 const isReplyReviewPrompt = prompt.includes("You are RemoteLab's hidden end-of-turn completion reviewer.");
@@ -28,6 +30,17 @@ const prefersDoingWork = prompt.includes('Prefer doing the work over describing 
 const hasOpenOfferHardRule = prompt.includes('A reply that ends with an open offer or permission request');
 const replacesOpenOfferWithResult = prompt.includes('Replace any prior open offer or permission request with the actual next action or result now.');
 const avoidsFakeChoiceRepair = prompt.includes('Do not turn a single-track task into a menu of options');
+const isDelayedReviewScenario = prompt.includes('延迟复核场景');
+const isDelayedAssetReviewScenario = prompt.includes('延迟附件复核场景');
+const outputDelayMs = isReplyReviewPrompt
+  ? (isDelayedAssetReviewScenario ? 700 : (isDelayedReviewScenario ? 450 : 0))
+  : 0;
+
+function writeGeneratedResultAsset(relativePath, content = 'fake generated video') {
+  const fullPath = join(process.cwd(), relativePath);
+  mkdirSync(dirname(fullPath), { recursive: true });
+  writeFileSync(fullPath, content, 'utf8');
+}
 
 let threadId = 'main-thread';
 let items = [{ type: 'agent_message', text: '我已经分析了机制问题。下一条我可以直接给你那份极短执行守则。' }];
@@ -49,7 +62,9 @@ if (isWorkflowPrompt) {
 } else if (isReplyReviewPrompt) {
   threadId = 'review-thread';
   const isChecklistScenario = prompt.includes('todo checklist');
-  const isExplicitBlockerScenario = prompt.includes('危险删除场景');
+  const isExplicitBlockerScenario = prompt.includes('危险删除场景')
+    || prompt.includes('延迟复核场景')
+    || prompt.includes('延迟附件复核场景');
   const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
   const isPseudoForkScenario = prompt.includes('你选一个我再继续');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
@@ -137,21 +152,50 @@ if (isWorkflowPrompt) {
     type: 'agent_message',
     text: '这一步会永久删除生产数据，需要你先明确确认，我才能继续执行。',
   }];
+} else if (prompt.includes('延迟附件复核场景')) {
+  const relativeOutputPath = 'generated/delayed-review-output.mp4';
+  writeGeneratedResultAsset(relativeOutputPath);
+  items = [
+    {
+      type: 'command_execution',
+      command: 'render --output ' + relativeOutputPath,
+      aggregated_output: 'generated to ' + relativeOutputPath,
+      exit_code: 0,
+      status: 'completed',
+    },
+    {
+      type: 'agent_message',
+      text: '导出文件已经生成；但删除原件这一步需要你先明确确认，我才能继续执行。',
+    },
+  ];
+} else if (prompt.includes('延迟复核场景')) {
+  items = [{
+    type: 'agent_message',
+    text: '这一步会永久删除生产数据，需要你先明确确认，我才能继续执行。',
+  }];
 }
 
-console.log(JSON.stringify({ type: 'thread.started', thread_id: threadId }));
-console.log(JSON.stringify({ type: 'turn.started' }));
-for (const item of items) {
+function emitTurn() {
+  console.log(JSON.stringify({ type: 'thread.started', thread_id: threadId }));
+  console.log(JSON.stringify({ type: 'turn.started' }));
+  for (const item of items) {
+    console.log(JSON.stringify({
+      type: 'item.completed',
+      item,
+    }));
+  }
   console.log(JSON.stringify({
-    type: 'item.completed',
-    item,
+    type: 'turn.completed',
+    usage: { input_tokens: 1, output_tokens: 1 },
   }));
+  setTimeout(() => process.exit(0), 20);
 }
-console.log(JSON.stringify({
-  type: 'turn.completed',
-  usage: { input_tokens: 1, output_tokens: 1 },
-}));
-setTimeout(() => process.exit(0), 20);
+
+if (outputDelayMs > 0) {
+  setTimeout(emitTurn, outputDelayMs);
+} else {
+  emitTurn();
+}
 `,
   'utf8',
 );
@@ -203,6 +247,10 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`Timed out: ${description}`);
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 try {
@@ -361,6 +409,128 @@ try {
     pseudoForkAssistantTexts.some((text) => text.includes('这里有几个方向，你先选一个我再继续。')),
     false,
     'repair continuation should not repeat the fake choice prompt',
+  );
+
+  const delayedReviewSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Delayed Review State', {
+    group: 'RemoteLab',
+    description: 'Verify a session stays running and defers workflow completion state while reply self-check is still pending.',
+  });
+
+  await sendMessage(delayedReviewSession.id, '延迟复核场景：这是明确依赖用户确认的破坏性动作，先停下来等我确认。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const delayedHistory = await getHistory(delayedReviewSession.id);
+      return delayedHistory.some((event) => event.type === 'status' && (event.content || '') === 'Assistant self-check: reviewing the latest reply for early stop…');
+    },
+    'delayed review scenario should enter the self-check review state',
+  );
+
+  await sleep(200);
+
+  const delayedDuringReview = await getSession(delayedReviewSession.id);
+  assert.equal(
+    delayedDuringReview?.activity?.run?.state,
+    'running',
+    'session should stay running while reply self-check is still pending',
+  );
+  assert.equal(
+    delayedDuringReview?.activity?.run?.phase,
+    'reply_self_check',
+    'pending reply self-check should expose a dedicated run phase',
+  );
+  assert.equal(
+    delayedDuringReview?.workflowState || '',
+    '',
+    'workflow classification should not update before self-check finishes',
+  );
+
+  await waitFor(
+    async () => (await getSession(delayedReviewSession.id))?.activity?.run?.state === 'idle',
+    'delayed review session should become idle after the self-check accept path',
+  );
+
+  await waitFor(
+    async () => (await getSession(delayedReviewSession.id))?.workflowState === 'done',
+    'workflow classification should update only after the delayed self-check finishes',
+  );
+
+  const delayedAssetReviewSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Delayed Review With Result Asset', {
+    group: 'RemoteLab',
+    description: 'Verify generated result assets do not make the session look idle or complete before a delayed reply self-check finishes.',
+  });
+
+  await sendMessage(delayedAssetReviewSession.id, '延迟附件复核场景：先把导出文件做出来，但删除原件之前先等我确认。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const delayedAssetHistory = await getHistory(delayedAssetReviewSession.id);
+      return delayedAssetHistory.some((event) => event.type === 'status' && (event.content || '') === 'Assistant self-check: reviewing the latest reply for early stop…');
+    },
+    'delayed asset review scenario should enter the self-check review state',
+  );
+
+  await waitFor(
+    async () => {
+      const delayedAssetHistory = await getHistory(delayedAssetReviewSession.id);
+      return delayedAssetHistory.some((event) => event.type === 'message' && event.role === 'assistant' && event.source === 'result_file_assets');
+    },
+    'generated result asset message should appear before the delayed self-check finishes',
+  );
+
+  await sleep(200);
+
+  const delayedAssetDuringReview = await getSession(delayedAssetReviewSession.id);
+  assert.equal(
+    delayedAssetDuringReview?.activity?.run?.state,
+    'running',
+    'generated result assets should not make the session look idle while reply self-check is still pending',
+  );
+  assert.equal(
+    delayedAssetDuringReview?.activity?.run?.phase,
+    'reply_self_check',
+    'generated result assets should keep the reply-self-check phase visible while review is pending',
+  );
+  assert.equal(
+    delayedAssetDuringReview?.workflowState || '',
+    '',
+    'workflow classification should still wait even after generated result assets are published during self-check',
+  );
+
+  const delayedAssetHistory = await getHistory(delayedAssetReviewSession.id);
+  const delayedAssetMessage = delayedAssetHistory.find((event) => (
+    event.type === 'message'
+    && event.role === 'assistant'
+    && event.source === 'result_file_assets'
+  ));
+  assert.ok(delayedAssetMessage, 'history should include the generated result asset message');
+  assert.equal(
+    delayedAssetMessage?.content,
+    'Generated file ready to download.',
+    'single generated result asset should use the singular download-ready copy',
+  );
+  assert.equal(
+    delayedAssetMessage?.attachments?.length,
+    1,
+    'generated result asset message should expose the published attachment while self-check is pending',
+  );
+
+  await waitFor(
+    async () => (await getSession(delayedAssetReviewSession.id))?.activity?.run?.state === 'idle',
+    'delayed asset review session should become idle after the self-check accept path',
+  );
+
+  await waitFor(
+    async () => (await getSession(delayedAssetReviewSession.id))?.workflowState === 'done',
+    'workflow classification should update only after the delayed asset review self-check finishes',
   );
 
   const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Explicit Blocker', {

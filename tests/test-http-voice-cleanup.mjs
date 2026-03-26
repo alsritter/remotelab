@@ -96,45 +96,21 @@ function setupTempHome() {
   );
   writeFileSync(
     join(localBin, 'fake-codex'),
-    `#!/usr/bin/env node
-const prompt = process.argv.slice(2).join(' ');
-const prefersEnglishTechnicalTerms = prompt.includes('Prefer English technical/product terms, repo names, commands, paths, and identifiers when the project context strongly supports them');
-const collapsesConflictingTerms = prompt.includes('two conflicting terms for what is probably one concept');
-const allowsFluencySmoothing = prompt.includes('Allow light fluency smoothing');
-const hasMixedLanguageHint = prompt.includes("Match the speaker's natural language mix");
-let transcript = 'voice received';
-if (prompt.includes('Raw ASR transcript:') && prompt.includes('请先把轻云版那个通道再发一次') && prompt.includes('内部发布通道名字')) {
-  transcript = '请先把青云版那个通道再发一次';
-} else if (prompt.includes('Raw ASR transcript:') && prompt.includes('请帮我把那个服务重起一下')) {
-  transcript = '请帮我把 RemoteLab 服务重启一下';
-} else if (prompt.includes('Raw ASR transcript:') && prompt.includes('把那个润木啦 assistant cake 再激进一点') && prompt.includes('assistant check')) {
-  transcript = prefersEnglishTechnicalTerms && collapsesConflictingTerms && allowsFluencySmoothing && hasMixedLanguageHint
-    ? '把那个 RemoteLab assistant check 再激进一点'
-    : '把那个润木啦 assistant cake 再激进一点';
-}
-setTimeout(() => {
-  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-voice-cleanup-test' }));
-  console.log(JSON.stringify({ type: 'turn.started' }));
-  console.log(JSON.stringify({
-    type: 'item.completed',
-    item: { type: 'agent_message', text: transcript }
-  }));
-  console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
-}, 30);
-`,
+    '#!/usr/bin/env node\nprocess.exit(0);\n',
     'utf8',
   );
   chmodSync(join(localBin, 'fake-codex'), 0o755);
 
-  return { home };
+  return { home, localBin };
 }
 
-async function startServer({ home, port }) {
+async function startServer({ home, localBin, port }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
+      PATH: `${localBin}:${process.env.PATH || ''}`,
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
     },
@@ -162,7 +138,7 @@ async function stopServer(child) {
   await waitFor(() => child.exitCode !== null, 'server shutdown');
 }
 
-async function createSession(port, name = 'RemoteLab voice cleanup session') {
+async function createSession(port, name = 'RemoteLab retired voice cleanup session') {
   const res = await request(port, 'POST', '/api/sessions', {
     folder: repoRoot,
     tool: 'fake-codex',
@@ -172,90 +148,24 @@ async function createSession(port, name = 'RemoteLab voice cleanup session') {
   return res.json.session;
 }
 
-async function waitForRunTerminal(port, runId) {
-  return waitFor(async () => {
-    const res = await request(port, 'GET', `/api/runs/${runId}`);
-    if (res.status !== 200) return false;
-    return ['completed', 'failed', 'cancelled'].includes(res.json.run.state) ? res.json.run : false;
-  }, `run ${runId} terminal`);
-}
-
 let chatServer = null;
 let home = '';
 
 try {
   const chatPort = randomPort();
-  ({ home } = setupTempHome());
-  chatServer = await startServer({ home, port: chatPort });
+  const tempHome = setupTempHome();
+  home = tempHome.home;
+  chatServer = await startServer({ home: tempHome.home, localBin: tempHome.localBin, port: chatPort });
 
   const session = await createSession(chatPort);
 
-  const missingTranscriptRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {});
-  assert.equal(missingTranscriptRes.status, 400, 'voice cleanup should reject empty requests');
-  assert.match(missingTranscriptRes.json?.error || '', /providedTranscript/i, 'voice cleanup should require a transcript string');
-
-  const audioRemovedRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {
-    providedTranscript: '请帮我把那个服务重起一下',
-    audio: {
-      data: Buffer.from('fake-wave-audio').toString('base64'),
-      mimeType: 'audio/wav',
-      originalName: 'voice.wav',
-    },
-  });
-  assert.equal(audioRemovedRes.status, 410, 'audio-based voice input should be removed');
-  assert.match(audioRemovedRes.json?.error || '', /removed/i, 'removed voice input should report a clear migration hint');
-
-  const plainRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {
-    providedTranscript: '请帮我把那个服务重起一下',
-    rewriteWithContext: false,
-  });
-  assert.equal(plainRes.status, 200, 'plain transcript cleanup should succeed');
-  assert.equal(plainRes.json.transcript, '请帮我把那个服务重起一下');
-  assert.equal(plainRes.json.rewriteApplied, false, 'cleanup should be a no-op when rewrite is disabled');
-  assert.equal(Object.prototype.hasOwnProperty.call(plainRes.json || {}, 'rawTranscript'), false, 'no-op cleanup should not emit a raw transcript copy');
-
-  const rewrittenRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {
+  const removedEndpointRes = await request(chatPort, 'POST', `/api/sessions/${session.id}/voice-transcriptions`, {
     providedTranscript: '请帮我把那个服务重起一下',
     rewriteWithContext: true,
   });
-  assert.equal(rewrittenRes.status, 200, 'rewrite cleanup should succeed');
-  assert.equal(rewrittenRes.json.transcript, '请帮我把 RemoteLab 服务重启一下');
-  assert.equal(rewrittenRes.json.rawTranscript, '请帮我把那个服务重起一下');
-  assert.equal(rewrittenRes.json.rewriteApplied, true, 'rewrite cleanup should report when it changes the transcript');
-
-  const contextualSession = await createSession(chatPort, 'RemoteLab contextual cleanup session');
-  const contextSeedRes = await request(chatPort, 'POST', `/api/sessions/${contextualSession.id}/messages`, {
-    text: '这轮里提到的“青云版”就是内部发布通道名字。',
-  });
-  assert.ok(contextSeedRes.status === 202 || contextSeedRes.status === 200, 'context seed message should be accepted');
-  assert.ok(contextSeedRes.json?.run?.id, 'context seed message should create a run');
-  await waitForRunTerminal(chatPort, contextSeedRes.json.run.id);
-
-  const contextRewriteRes = await request(chatPort, 'POST', `/api/sessions/${contextualSession.id}/voice-transcriptions`, {
-    providedTranscript: '请先把轻云版那个通道再发一次',
-    rewriteWithContext: true,
-  });
-  assert.equal(contextRewriteRes.status, 200, 'session-context transcript cleanup should succeed');
-  assert.equal(contextRewriteRes.json.transcript, '请先把青云版那个通道再发一次');
-  assert.equal(contextRewriteRes.json.rawTranscript, '请先把轻云版那个通道再发一次');
-  assert.equal(contextRewriteRes.json.rewriteApplied, true, 'session-context transcript cleanup should use recent discussion when stable memory is not enough');
-
-  const mixedLanguageSession = await createSession(chatPort, 'RemoteLab mixed-language cleanup session');
-  const mixedSeedRes = await request(chatPort, 'POST', `/api/sessions/${mixedLanguageSession.id}/messages`, {
-    text: '这轮要改的是 RemoteLab 的 assistant check，目标是让它更激进一点。',
-  });
-  assert.ok(mixedSeedRes.status === 202 || mixedSeedRes.status === 200, 'mixed-language context seed message should be accepted');
-  assert.ok(mixedSeedRes.json?.run?.id, 'mixed-language context seed should create a run');
-  await waitForRunTerminal(chatPort, mixedSeedRes.json.run.id);
-
-  const mixedRewriteRes = await request(chatPort, 'POST', `/api/sessions/${mixedLanguageSession.id}/voice-transcriptions`, {
-    providedTranscript: '把那个润木啦 assistant cake 再激进一点',
-    rewriteWithContext: true,
-  });
-  assert.equal(mixedRewriteRes.status, 200, 'mixed-language transcript cleanup should succeed');
-  assert.equal(mixedRewriteRes.json.transcript, '把那个 RemoteLab assistant check 再激进一点');
-  assert.equal(mixedRewriteRes.json.rawTranscript, '把那个润木啦 assistant cake 再激进一点');
-  assert.equal(mixedRewriteRes.json.rewriteApplied, true, 'mixed-language transcript cleanup should infer technical terms from project and session context');
+  assert.equal(removedEndpointRes.status, 410, 'retired voice cleanup endpoint should return Gone');
+  assert.match(removedEndpointRes.json?.error || '', /removed/i, 'retired voice cleanup endpoint should explain that the path is gone');
+  assert.match(removedEndpointRes.json?.error || '', /directly/i, 'retired voice cleanup endpoint should tell callers to send messages directly');
 
   console.log('test-http-voice-cleanup: ok');
 } catch (error) {

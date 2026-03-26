@@ -27,11 +27,18 @@ function restoreOwnerSessionSelection() {
   pendingNavigationState = null;
 }
 
-if ("serviceWorker" in navigator) {
+if (
+  "serviceWorker" in navigator
+  && typeof navigator.serviceWorker?.addEventListener === "function"
+) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "remotelab:open-session") return;
     applyNavigationState(event.data);
     window.focus();
+    return queueForegroundRefresh({
+      forceFresh: true,
+      viewportIntent: "session_entry",
+    }).catch(() => {});
   });
 }
 
@@ -48,8 +55,101 @@ function notifyCompletion(session) {
   n.onclick = () => {
     window.focus();
     applyNavigationState({ sessionId: session?.id, tab: "sessions" });
+    queueForegroundRefresh({
+      forceFresh: true,
+      viewportIntent: "session_entry",
+    }).catch(() => {});
     n.close();
   };
+}
+
+const FOREGROUND_REFRESH_THROTTLE_MS = 1500;
+let foregroundRefreshPromise = null;
+let foregroundRefreshHandlersReady = false;
+let lastForegroundRefreshAt = 0;
+let pendingCurrentSessionRefreshOptions = null;
+
+function buildSessionRefreshRequestOptions(forceFresh = false) {
+  return forceFresh
+    ? { revalidate: false, cache: "no-store" }
+    : {};
+}
+
+function mergeSessionRefreshOptions(current = {}, next = {}) {
+  return {
+    forceFresh: current.forceFresh === true || next.forceFresh === true,
+    viewportIntent:
+      normalizeSessionViewportIntent(current.viewportIntent) === "session_entry"
+      || normalizeSessionViewportIntent(next.viewportIntent) === "session_entry"
+        ? "session_entry"
+        : "preserve",
+  };
+}
+
+function canQueueForegroundRefresh() {
+  if (
+    (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode)
+    || typeof document === "undefined"
+  ) {
+    return false;
+  }
+  if (document.visibilityState === "hidden") {
+    return false;
+  }
+  if (visitorMode) {
+    return Boolean(
+      currentSessionId
+      || (typeof visitorSessionId !== "undefined" && visitorSessionId),
+    );
+  }
+  return true;
+}
+
+async function runForegroundRefresh({ forceFresh = false, viewportIntent = "preserve" } = {}) {
+  if (!canQueueForegroundRefresh()) return null;
+  await refreshRealtimeViews({ forceFresh, viewportIntent });
+  return currentSessionId || null;
+}
+
+function queueForegroundRefresh(options = {}) {
+  const requestOptions = mergeSessionRefreshOptions(
+    { forceFresh: false, viewportIntent: "preserve" },
+    options,
+  );
+  if (!canQueueForegroundRefresh()) {
+    return Promise.resolve(null);
+  }
+  if (foregroundRefreshPromise) {
+    return foregroundRefreshPromise;
+  }
+  const now = Date.now();
+  if (now - lastForegroundRefreshAt < FOREGROUND_REFRESH_THROTTLE_MS) {
+    return Promise.resolve(null);
+  }
+  lastForegroundRefreshAt = now;
+  foregroundRefreshPromise = (async () => {
+    try {
+      return await runForegroundRefresh(requestOptions);
+    } finally {
+      foregroundRefreshPromise = null;
+    }
+  })();
+  return foregroundRefreshPromise;
+}
+
+function setupForegroundRefreshHandlers() {
+  if (foregroundRefreshHandlersReady) return;
+  foregroundRefreshHandlersReady = true;
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return null;
+      return queueForegroundRefresh({ forceFresh: true }).catch(() => {});
+    });
+  }
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("focus", () => queueForegroundRefresh({ forceFresh: true }).catch(() => {}));
+    window.addEventListener("pageshow", () => queueForegroundRefresh({ forceFresh: true }).catch(() => {}));
+  }
 }
 
 const SESSION_LIST_ORGANIZER_POLL_INTERVAL_MS = 1200;
@@ -473,7 +573,7 @@ async function fetchSessionSidebar(sessionId) {
   return upsertSession(data.session);
 }
 
-async function fetchArchivedSessions() {
+async function fetchArchivedSessions({ forceFresh = false } = {}) {
   if (visitorMode) return [];
   if (archivedSessionsRefreshPromise) {
     return archivedSessionsRefreshPromise;
@@ -489,7 +589,10 @@ async function fetchArchivedSessions() {
   renderSessionList();
   const request = (async () => {
     try {
-      const data = await fetchJsonOrRedirect(ARCHIVED_SESSION_LIST_URL);
+      const data = await fetchJsonOrRedirect(
+        ARCHIVED_SESSION_LIST_URL,
+        buildSessionRefreshRequestOptions(forceFresh),
+      );
       return applyArchivedSessionListState(data.sessions || [], {
         archivedCount: Number.isInteger(data.archivedCount)
           ? data.archivedCount
@@ -610,9 +713,12 @@ async function deleteUserRecord(userId) {
   await fetchUsersList();
 }
 
-async function fetchSessionsList() {
+async function fetchSessionsList({ forceFresh = false } = {}) {
   if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect(SESSION_LIST_URL);
+  const data = await fetchJsonOrRedirect(
+    SESSION_LIST_URL,
+    buildSessionRefreshRequestOptions(forceFresh),
+  );
   applySessionListState(data.sessions || [], {
     archivedCount: Number.isInteger(data.archivedCount) ? data.archivedCount : 0,
   });
@@ -714,7 +820,7 @@ function applyAttachedSessionState(id, session) {
   syncShareButton();
 }
 
-async function fetchSessionState(sessionId) {
+async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
   if (isShareSnapshotReadOnlyMode()) {
     const snapshotSession = buildShareSnapshotSessionRecord();
     if (!snapshotSession || snapshotSession.id !== sessionId) {
@@ -726,7 +832,10 @@ async function fetchSessionState(sessionId) {
     }
     return normalized;
   }
-  const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  const data = await fetchJsonOrRedirect(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+    buildSessionRefreshRequestOptions(forceFresh),
+  );
   const normalized = upsertSession(data.session);
   if (normalized && currentSessionId === sessionId) {
     rememberSessionReviewedLocally(normalized);
@@ -735,7 +844,10 @@ async function fetchSessionState(sessionId) {
   return normalized;
 }
 
-async function fetchSessionEvents(sessionId, { runState = "idle", viewportIntent = "preserve" } = {}) {
+async function fetchSessionEvents(
+  sessionId,
+  { runState = "idle", viewportIntent = "preserve", forceFresh = false } = {},
+) {
   const normalizedViewportIntent = normalizeSessionViewportIntent(viewportIntent);
   const hadRenderedMessages =
     messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
@@ -746,6 +858,7 @@ async function fetchSessionEvents(sessionId, { runState = "idle", viewportIntent
     ? { events: getShareSnapshotDisplayEvents() }
     : await fetchJsonOrRedirect(
       `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
+      buildSessionRefreshRequestOptions(forceFresh),
     );
   const events = data.events || [];
   if (currentSessionId !== sessionId) return events;
@@ -828,13 +941,16 @@ async function fetchSessionEvents(sessionId, { runState = "idle", viewportIntent
 
 async function runCurrentSessionRefresh(
   sessionId,
-  { viewportIntent = hasAttachedSession ? "preserve" : "session_entry" } = {},
+  {
+    viewportIntent = hasAttachedSession ? "preserve" : "session_entry",
+    forceFresh = false,
+  } = {},
 ) {
-  const session = await fetchSessionState(sessionId);
+  const session = await fetchSessionState(sessionId, { forceFresh });
   if (currentSessionId !== sessionId) return session;
   const runState = getSessionRunState(session);
   if (shouldFetchSessionEventsForRefresh(sessionId, session)) {
-    await fetchSessionEvents(sessionId, { runState, viewportIntent });
+    await fetchSessionEvents(sessionId, { runState, viewportIntent, forceFresh });
     return session;
   }
   renderedEventState.sessionId = sessionId;
@@ -843,22 +959,35 @@ async function runCurrentSessionRefresh(
 }
 
 async function refreshCurrentSession(
-  { viewportIntent = hasAttachedSession ? "preserve" : "session_entry" } = {},
+  {
+    viewportIntent = hasAttachedSession ? "preserve" : "session_entry",
+    forceFresh = false,
+  } = {},
 ) {
   const sessionId = currentSessionId;
   if (!sessionId) return null;
+  const requestOptions = mergeSessionRefreshOptions(
+    { forceFresh: false, viewportIntent: hasAttachedSession ? "preserve" : "session_entry" },
+    { forceFresh, viewportIntent },
+  );
   if (currentSessionRefreshPromise) {
     pendingCurrentSessionRefresh = true;
+    pendingCurrentSessionRefreshOptions = mergeSessionRefreshOptions(
+      pendingCurrentSessionRefreshOptions || requestOptions,
+      requestOptions,
+    );
     return currentSessionRefreshPromise;
   }
   currentSessionRefreshPromise = (async () => {
     try {
-      return await runCurrentSessionRefresh(sessionId, { viewportIntent });
+      return await runCurrentSessionRefresh(sessionId, requestOptions);
     } finally {
       currentSessionRefreshPromise = null;
       if (pendingCurrentSessionRefresh) {
+        const pendingOptions = pendingCurrentSessionRefreshOptions || requestOptions;
         pendingCurrentSessionRefresh = false;
-        refreshCurrentSession().catch(() => {});
+        pendingCurrentSessionRefreshOptions = null;
+        refreshCurrentSession(pendingOptions).catch(() => {});
       }
     }
   })();
@@ -903,20 +1032,23 @@ async function refreshSidebarSession(sessionId) {
   return request;
 }
 
-async function refreshRealtimeViews({ viewportIntent = "preserve" } = {}) {
+async function refreshRealtimeViews({ viewportIntent = "preserve", forceFresh = false } = {}) {
   if (visitorMode) {
     if (currentSessionId) {
-      await refreshCurrentSession({ viewportIntent }).catch(() => {});
+      await refreshCurrentSession({ viewportIntent, forceFresh }).catch(() => {});
     }
     return;
   }
 
-  await fetchSessionsList().catch(() => {});
-  if (archivedSessionsLoaded) {
-    await fetchArchivedSessions().catch(() => {});
+  await fetchSessionsList({ forceFresh }).catch(() => {});
+  if (typeof archivedSessionsLoaded !== "undefined" && archivedSessionsLoaded) {
+    await fetchArchivedSessions({ forceFresh }).catch(() => {});
+  }
+  if (pendingNavigationState) {
+    restoreOwnerSessionSelection();
   }
   if (currentSessionId) {
-    await refreshCurrentSession({ viewportIntent }).catch(() => {});
+    await refreshCurrentSession({ viewportIntent, forceFresh }).catch(() => {});
   }
 }
 

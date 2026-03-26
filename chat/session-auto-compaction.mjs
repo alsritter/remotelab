@@ -446,7 +446,8 @@ export async function queueContextCompaction(sessionId, session, run, { automati
 }
 
 export async function maybeAutoCompact(sessionId, session, run, manifest, services = {}) {
-  if (!session || !run || manifest?.internalOperation) return false;
+  if (!session || !run) return false;
+  if (manifest?.internalOperation && manifest.internalOperation !== 'reply_self_repair') return false;
   if (services.getSessionQueueCount(session) > 0) return false;
   let contextTokens = getRunLiveContextTokens(run);
   let autoCompactTokens = getAutoCompactContextTokens(run);

@@ -84,6 +84,7 @@ async function initApp() {
   if (visitorMode) {
     await bootstrapViaHttp();
     connect();
+    setupForegroundRefreshHandlers();
     return;
   }
 
@@ -103,6 +104,7 @@ async function initApp() {
   await Promise.all([toolsPromise, sessionsPromise]);
   restoreOwnerSessionSelection();
   connect();
+  setupForegroundRefreshHandlers();
   void loadModelsForCurrentTool();
   void appsPromise;
   void usersPromise;

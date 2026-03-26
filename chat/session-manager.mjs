@@ -125,7 +125,6 @@ import {
   summarizeReplySelfCheckReason,
 } from './session-reply-self-check.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
-import { rewriteVoiceTranscriptForSessionWithContext } from './session-voice-transcript-rewrite.mjs';
 
 const MIME_EXTENSIONS = {
   'application/json': '.json',
@@ -1060,6 +1059,40 @@ function ensureLiveSession(sessionId) {
   return live;
 }
 
+function isReplySelfRepairOperation(manifest) {
+  return manifest?.internalOperation === REPLY_SELF_REPAIR_INTERNAL_OPERATION;
+}
+
+function allowsSessionTurnCompletionEffects(manifest) {
+  return !manifest?.internalOperation || isReplySelfRepairOperation(manifest);
+}
+
+function hasPendingReplySelfCheck(sessionId) {
+  return !!liveSessions.get(sessionId)?.pendingReplySelfCheckRunId;
+}
+
+function markPendingReplySelfCheck(sessionId, runId, startedAt = nowIso()) {
+  if (!sessionId || !runId) return false;
+  const live = ensureLiveSession(sessionId);
+  const changed = live.pendingReplySelfCheckRunId !== runId
+    || live.pendingReplySelfCheckStartedAt !== startedAt;
+  live.pendingReplySelfCheckRunId = runId;
+  live.pendingReplySelfCheckStartedAt = startedAt;
+  return changed;
+}
+
+function clearPendingReplySelfCheck(sessionId, { broadcast = false } = {}) {
+  const live = liveSessions.get(sessionId);
+  if (!live) return false;
+  const hadPendingState = !!live.pendingReplySelfCheckRunId || !!live.pendingReplySelfCheckStartedAt;
+  delete live.pendingReplySelfCheckRunId;
+  delete live.pendingReplySelfCheckStartedAt;
+  if (hadPendingState && broadcast) {
+    broadcastSessionInvalidation(sessionId);
+  }
+  return hadPendingState;
+}
+
 function stopObservedRun(runId) {
   const observed = observedRuns.get(runId);
   if (!observed) return;
@@ -1454,7 +1487,8 @@ async function touchSessionMeta(sessionId, extra = {}) {
 }
 
 function queueSessionCompletionTargets(session, run, manifest) {
-  if (!session?.id || !run?.id || manifest?.internalOperation) return false;
+  if (!session?.id || !run?.id) return false;
+  if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) return false;
   const targets = sanitizeEmailCompletionTargets(session.completionTargets || []);
   if (targets.length === 0) return false;
   dispatchSessionEmailCompletionTargets({
@@ -1466,6 +1500,16 @@ function queueSessionCompletionTargets(session, run, manifest) {
   return true;
 }
 
+async function maybeSendSessionCompletionPush(sessionId, fallbackSession = null) {
+  const currentSession = await getSession(sessionId) || fallbackSession;
+  if (!currentSession?.id) return false;
+  if (isSessionRunning(currentSession)) return false;
+  if (getSessionQueueCount(currentSession) > 0) return false;
+  if (hasPendingReplySelfCheck(sessionId)) return false;
+  sendCompletionPush({ ...currentSession, id: sessionId }).catch(() => {});
+  return true;
+}
+
 async function resumePendingCompletionTargets() {
   for (const runId of await listRunIds()) {
     const run = await getRun(runId);
@@ -1473,7 +1517,7 @@ async function resumePendingCompletionTargets() {
     const session = await getSession(run.sessionId);
     if (!session?.completionTargets?.length) continue;
     const manifest = await getRunManifest(runId);
-    if (manifest?.internalOperation) continue;
+    if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) continue;
     queueSessionCompletionTargets(session, run, manifest);
   }
 }
@@ -1867,62 +1911,69 @@ async function shouldRunReplySelfCheck(session, run, manifest) {
   return enabledTools.has(toolDefinition.id || '') || enabledTools.has(toolDefinition.toolProfile || '');
 }
 
-export async function rewriteVoiceTranscriptForSession(sessionId, transcript, options = {}) {
-  return rewriteVoiceTranscriptForSessionWithContext(sessionId, transcript, {
-    findSessionMeta,
-    loadContextHead: getContextHead,
-    loadSessionHistory: loadHistory,
-    runAssistantPrompt: runDetachedAssistantPrompt,
-  }, options);
-}
-
-async function maybeRunReplySelfCheck(sessionId, session, run, manifest) {
+async function prepareReplySelfCheck(sessionId, session, run, manifest) {
   if (!await shouldRunReplySelfCheck(session, run, manifest)) {
-    return false;
+    return null;
   }
   const latestSession = await getSession(sessionId);
   if (!latestSession || latestSession.activeRunId || getSessionQueueCount(latestSession) > 0) {
-    return false;
+    return null;
   }
 
   const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(sessionId, run.id, {
     loadSessionHistory: loadHistory,
   });
   if (!assistantTurnText) {
-    return false;
+    return null;
   }
 
+  markPendingReplySelfCheck(sessionId, run.id);
   await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_REVIEWING_STATUS));
   broadcastSessionInvalidation(sessionId);
+
+  return {
+    session: latestSession,
+    userMessage,
+    assistantTurnText,
+  };
+}
+
+async function maybeRunReplySelfCheck(sessionId, session, run, manifest, preparedCheck = null) {
+  if (!preparedCheck) {
+    return { attempted: false, continued: false };
+  }
+
+  const { userMessage, assistantTurnText } = preparedCheck;
+  const effectiveSession = preparedCheck.session || session;
 
   let reviewText = '';
   try {
     reviewText = await runDetachedAssistantPrompt({
       id: sessionId,
-      folder: session.folder,
-      tool: run.tool || session.tool,
+      folder: effectiveSession.folder,
+      tool: run.tool || effectiveSession.tool,
       model: run.model || undefined,
       effort: run.effort || undefined,
       thinking: false,
     }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText }));
   } catch (error) {
     await appendEvent(sessionId, statusEvent(`Assistant self-check: review failed — ${summarizeReplySelfCheckReason(error.message, 'background reviewer error')}`));
-    broadcastSessionInvalidation(sessionId);
-    return false;
+    clearPendingReplySelfCheck(sessionId, { broadcast: true });
+    return { attempted: true, continued: false };
   }
 
   const reviewDecision = parseReplySelfCheckDecision(reviewText);
   const refreshed = await getSession(sessionId);
   if (!refreshed || refreshed.activeRunId || getSessionQueueCount(refreshed) > 0) {
     await appendEvent(sessionId, statusEvent('Assistant self-check: skipped automatic continuation because new work arrived first.'));
-    broadcastSessionInvalidation(sessionId);
-    return false;
+    clearPendingReplySelfCheck(sessionId, { broadcast: true });
+    return { attempted: true, continued: false };
   }
 
   if (reviewDecision.action !== 'continue') {
     await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_ACCEPT_STATUS));
-    broadcastSessionInvalidation(sessionId);
-    return true;
+    clearPendingReplySelfCheck(sessionId, { broadcast: true });
+    return { attempted: true, continued: false };
   }
 
   const reason = summarizeReplySelfCheckReason(reviewDecision.reason, REPLY_SELF_CHECK_DEFAULT_REASON);
@@ -1945,11 +1996,12 @@ async function maybeRunReplySelfCheck(sessionId, session, run, manifest) {
     });
   } catch (error) {
     await appendEvent(sessionId, statusEvent(`Assistant self-check: failed to continue automatically — ${summarizeReplySelfCheckReason(error.message, 'unable to launch follow-up reply')}`));
-    broadcastSessionInvalidation(sessionId);
-    return false;
+    clearPendingReplySelfCheck(sessionId, { broadcast: true });
+    return { attempted: true, continued: false };
   }
 
-  return true;
+  clearPendingReplySelfCheck(sessionId);
+  return { attempted: true, continued: true };
 }
 
 
@@ -2233,6 +2285,95 @@ function scheduleSessionWorkflowStateSuggestion(session, run) {
   return true;
 }
 
+async function runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest) {
+  let session = latestSession;
+  let sessionChanged = false;
+  const allowCompletionEffects = allowsSessionTurnCompletionEffects(manifest);
+
+  if (allowCompletionEffects) {
+    const taskCardSession = await maybeApplyAssistantTaskCard(sessionId, finalizedRun.id, session, getTaskCardFollowupServices());
+    if (taskCardSession) {
+      session = taskCardSession;
+      sessionChanged = true;
+    } else {
+      scheduleSessionTaskCardSuggestion(session, finalizedRun, getTaskCardFollowupServices());
+    }
+  }
+
+  const hasQueuedFollowUps = getSessionQueueCount(session) > 0;
+  if (hasQueuedFollowUps) {
+    scheduleQueuedFollowUpDispatch(sessionId);
+  }
+
+  if (allowCompletionEffects && !hasQueuedFollowUps) {
+    queueSessionCompletionTargets(session, finalizedRun, manifest);
+    scheduleSessionWorkflowStateSuggestion(session, finalizedRun);
+  }
+
+  const needsRename = isSessionAutoRenamePending(session);
+  const needsGrouping = !session.group || !session.description;
+
+  if (needsRename || needsGrouping) {
+    if (needsRename) {
+      setRenameState(sessionId, 'pending');
+    }
+
+    const labelSuggestionDone = triggerSessionLabelSuggestion(
+      {
+        id: sessionId,
+        folder: session.folder,
+        name: session.name || '',
+        group: session.group || '',
+        description: session.description || '',
+        appName: session.appName || '',
+        sourceName: session.sourceName || '',
+        autoRenamePending: session.autoRenamePending,
+        tool: finalizedRun.tool || session.tool,
+        model: finalizedRun.model || undefined,
+        effort: finalizedRun.effort || undefined,
+        thinking: !!finalizedRun.thinking,
+      },
+      async (newName) => {
+        const currentSession = await getSession(sessionId);
+        if (!isSessionAutoRenamePending(currentSession)) return null;
+        return renameSession(sessionId, newName);
+      },
+    );
+
+    if (needsRename) {
+      labelSuggestionDone.then(async (labelResult) => {
+        const grouped = await applyGeneratedSessionGrouping(sessionId, labelResult);
+        const updated = grouped || await getSession(sessionId);
+        const stillPendingRename = !!updated && isSessionAutoRenamePending(updated);
+        if (stillPendingRename) {
+          setRenameState(
+            sessionId,
+            'failed',
+            labelResult?.rename?.error || labelResult?.error || 'No title generated',
+          );
+        } else {
+          clearRenameState(sessionId, { broadcast: true });
+        }
+        if (allowCompletionEffects && !hasQueuedFollowUps) {
+          await maybeSendSessionCompletionPush(sessionId, updated || session);
+        }
+      });
+      return { session, sessionChanged };
+    }
+
+    labelSuggestionDone.then(async (labelResult) => {
+      await applyGeneratedSessionGrouping(sessionId, labelResult);
+    });
+  }
+
+  if (allowCompletionEffects && !hasQueuedFollowUps) {
+    void maybeAutoCompact(sessionId, session, finalizedRun, manifest, getCompactionServices());
+    void maybeSendSessionCompletionPush(sessionId, session);
+  }
+
+  return { session, sessionChanged };
+}
+
 function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
   const live = ensureLiveSession(sessionId);
   if (live.earlyTitlePromise) {
@@ -2405,89 +2546,23 @@ async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = 
     return { historyChanged, sessionChanged };
   }
 
-  if (!manifest?.internalOperation) {
-    const taskCardSession = await maybeApplyAssistantTaskCard(sessionId, run.id, latestSession, getTaskCardFollowupServices());
-    if (taskCardSession) {
-      latestSession = taskCardSession;
-      sessionChanged = true;
-    } else {
-      scheduleSessionTaskCardSuggestion(latestSession, finalizedRun, getTaskCardFollowupServices());
-    }
-  }
-
+  const preparedReplySelfCheck = await prepareReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
   historyChanged = await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, normalizedEvents) || historyChanged;
 
-  if (getSessionQueueCount(latestSession) > 0) {
-    scheduleQueuedFollowUpDispatch(sessionId);
+  const replySelfCheck = await maybeRunReplySelfCheck(
+    sessionId,
+    latestSession,
+    finalizedRun,
+    manifest,
+    preparedReplySelfCheck,
+  );
+  if (replySelfCheck.continued) {
+    return { historyChanged, sessionChanged };
   }
 
-  queueSessionCompletionTargets(latestSession, finalizedRun, manifest);
-  if (!manifest?.internalOperation) {
-    scheduleSessionWorkflowStateSuggestion(latestSession, finalizedRun);
-  }
-
-  const needsRename = isSessionAutoRenamePending(latestSession);
-  const needsGrouping = !latestSession.group || !latestSession.description;
-
-  if (needsRename || needsGrouping) {
-    if (needsRename) {
-      setRenameState(sessionId, 'pending');
-    }
-
-    const labelSuggestionDone = triggerSessionLabelSuggestion(
-      {
-        id: sessionId,
-        folder: latestSession.folder,
-        name: latestSession.name || '',
-        group: latestSession.group || '',
-        description: latestSession.description || '',
-        appName: latestSession.appName || '',
-        sourceName: latestSession.sourceName || '',
-        autoRenamePending: latestSession.autoRenamePending,
-        tool: finalizedRun.tool || latestSession.tool,
-        model: finalizedRun.model || undefined,
-        effort: finalizedRun.effort || undefined,
-        thinking: !!finalizedRun.thinking,
-      },
-      async (newName) => {
-        const currentSession = await getSession(sessionId);
-        if (!isSessionAutoRenamePending(currentSession)) return null;
-        return renameSession(sessionId, newName);
-      },
-    );
-
-    if (needsRename) {
-      labelSuggestionDone.then(async (labelResult) => {
-        const grouped = await applyGeneratedSessionGrouping(sessionId, labelResult);
-        const updated = grouped || await getSession(sessionId);
-        const stillPendingRename = !!updated && isSessionAutoRenamePending(updated);
-        if (stillPendingRename) {
-          setRenameState(
-            sessionId,
-            'failed',
-            labelResult?.rename?.error || labelResult?.error || 'No title generated',
-          );
-        } else {
-          clearRenameState(sessionId, { broadcast: true });
-        }
-        sendCompletionPush({ ...(updated || latestSession), id: sessionId }).catch(() => {});
-      });
-      if (!manifest?.internalOperation) {
-        void maybeRunReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
-      }
-      return { historyChanged, sessionChanged };
-    }
-
-    labelSuggestionDone.then(async (labelResult) => {
-      await applyGeneratedSessionGrouping(sessionId, labelResult);
-    });
-  }
-
-  void maybeAutoCompact(sessionId, latestSession, finalizedRun, manifest, getCompactionServices());
-  sendCompletionPush({ ...latestSession, id: sessionId }).catch(() => {});
-  if (!manifest?.internalOperation) {
-    void maybeRunReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
-  }
+  latestSession = await getSession(sessionId) || latestSession;
+  const completionEffects = await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
+  sessionChanged = sessionChanged || completionEffects.sessionChanged;
   return { historyChanged, sessionChanged };
 }
 
@@ -3430,6 +3505,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   let activeRun = null;
   let hasActiveRun = false;
   const hasPendingCompact = liveSessions.get(sessionId)?.pendingCompact === true;
+  const replySelfCheckPending = hasPendingReplySelfCheck(sessionId);
   const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId : null;
 
   if (activeRunId) {
@@ -3444,7 +3520,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }
   }
 
-  if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
+  if ((hasActiveRun || hasPendingCompact || replySelfCheckPending || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
     const queuedImages = options.preSavedAttachments?.length > 0
       ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
       : sanitizeQueuedFollowUpAttachments(await saveAttachments(images));
@@ -3466,7 +3542,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       return true;
     });
     const wasDuplicateQueueInsert = queuedMeta.changed === false;
-    if (!hasActiveRun && !hasPendingCompact) {
+    if (!hasActiveRun && !hasPendingCompact && !replySelfCheckPending) {
       scheduleQueuedFollowUpDispatch(sessionId);
     }
     broadcastSessionInvalidation(sessionId);

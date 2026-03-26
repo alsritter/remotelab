@@ -35,7 +35,6 @@ import {
   listSessions,
   renameSession,
   resolveAttachmentMimeType,
-  rewriteVoiceTranscriptForSession,
   saveSessionAsTemplate,
   sendMessage,
   setSessionArchived,
@@ -183,7 +182,6 @@ const staticMimeTypesByExtension = {
 
 const staticDirResolved = resolve(staticDir);
 const MESSAGE_SUBMISSION_MAX_BYTES = 256 * 1024 * 1024;
-const VOICE_CLEANUP_PAYLOAD_MAX_BYTES = 256 * 1024;
 const uploadedMediaMimeTypes = {
   gif: 'image/gif',
   jpeg: 'image/jpeg',
@@ -451,28 +449,6 @@ async function maybePublishSavedAttachmentsToFileAssets(savedAttachments = [], o
     console.warn('Failed to offload uploaded attachments to object storage; keeping local attachments.', error);
     return savedAttachments;
   }
-}
-
-async function readVoiceCleanupPayload(req) {
-  const contentType = String(req.headers['content-type'] || '').toLowerCase();
-  if (contentType.startsWith('multipart/form-data')) {
-    const error = new Error('Audio voice input has been removed. Send `providedTranscript` JSON instead.');
-    error.statusCode = 410;
-    throw error;
-  }
-
-  const body = await readBody(req, VOICE_CLEANUP_PAYLOAD_MAX_BYTES);
-  const payload = body ? JSON.parse(body) : {};
-  if (payload?.audio) {
-    const error = new Error('Audio voice input has been removed. Send `providedTranscript` JSON instead.');
-    error.statusCode = 410;
-    throw error;
-  }
-
-  return {
-    rewriteWithContext: payload?.rewriteWithContext === true,
-    providedTranscript: typeof payload?.providedTranscript === 'string' ? payload.providedTranscript.trim() : '',
-  };
 }
 
 function getLatestMtimeMsSync(path) {
@@ -1590,7 +1566,8 @@ export async function handleRequest(req, res) {
     }
     const timeline = await getSessionTimelineEvents(sessionId);
     const events = buildSessionDisplayEvents(timeline, {
-      sessionRunning: session?.activity?.run?.state === 'running',
+      sessionRunning: session?.activity?.run?.state === 'running'
+        && session?.activity?.run?.phase !== 'reply_self_check',
     });
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return;
@@ -1919,48 +1896,7 @@ export async function handleRequest(req, res) {
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'voice-transcriptions' && req.method === 'POST') {
       if (!requireSessionAccess(res, authSession, sessionId)) return;
-      let payload;
-      try {
-        payload = await readVoiceCleanupPayload(req);
-      } catch (error) {
-        writeJson(
-          res,
-          error.code === 'BODY_TOO_LARGE' ? 413 : (error?.statusCode || 400),
-          { error: error.code === 'BODY_TOO_LARGE' ? 'Request body too large' : (error?.message || 'Bad request') },
-        );
-        return;
-      }
-
-      const providedTranscript = typeof payload?.providedTranscript === 'string'
-        ? payload.providedTranscript.trim()
-        : '';
-      if (!providedTranscript) {
-        writeJson(res, 400, { error: 'providedTranscript is required' });
-        return;
-      }
-
-      try {
-        let transcript = providedTranscript;
-        let rewriteApplied = false;
-        if (payload.rewriteWithContext && transcript) {
-          try {
-            const rewritten = await rewriteVoiceTranscriptForSession(sessionId, transcript);
-            if (typeof rewritten?.transcript === 'string' && rewritten.transcript.trim()) {
-              rewriteApplied = rewritten.changed === true;
-              transcript = rewritten.transcript.trim();
-            }
-          } catch (error) {
-            console.warn(`[voice-cleanup] transcript rewrite failed for ${sessionId.slice(0, 8)}: ${error?.message || error}`);
-          }
-        }
-        writeJson(res, 200, {
-          transcript,
-          ...(rewriteApplied ? { rawTranscript: providedTranscript } : {}),
-          rewriteApplied,
-        });
-      } catch (error) {
-        writeJson(res, error?.statusCode || 400, { error: error?.message || 'Voice cleanup failed' });
-      }
+      writeJson(res, 410, { error: 'Voice transcript cleanup has been removed. Send messages directly.' });
       return;
     }
 

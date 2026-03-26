@@ -244,7 +244,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [x] Resume ID persistence (survives server restarts)
 - [x] Web push notifications
 - [x] Remove the shipped `Board` surface from the active owner flow
-- [x] Remove voice-input UI/backend while keeping transcript-first voice cleanup
+- [x] Remove voice-input UI/backend and the leftover hidden transcript-cleanup send path
 
 ### P1 — Next Up
 - [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting

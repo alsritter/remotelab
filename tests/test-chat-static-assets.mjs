@@ -238,6 +238,7 @@ async function main() {
     assert.doesNotMatch(page.text, /id="voiceSettingsMount"/);
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
+    assert.doesNotMatch(page.text, /id="voiceCleanupToggle"/);
     assert.match(page.text, /id="msgInput"[\s\S]*id="sendBtn"/, 'send button should render immediately after the composer textarea');
     assert.doesNotMatch(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
@@ -532,6 +533,7 @@ async function main() {
     assert.equal(composeAsset.status, 200, 'compose asset should load');
     assert.match(composeAsset.text, /focusComposer\(\{ force: true, preventScroll: true \}\)/);
     assert.match(composeAsset.text, /window\.RemoteLabLayout\?\.subscribe/);
+    assert.doesNotMatch(composeAsset.text, /voice-transcriptions/);
 
     const voiceInputAsset = await request(port, 'GET', '/chat/voice-input.js');
     assert.equal(voiceInputAsset.status, 404, 'removed voice input asset should no longer be served');
