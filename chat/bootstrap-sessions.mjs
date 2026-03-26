@@ -27,6 +27,7 @@ const BOOTSTRAP_ASSETS_DIR = join(MODULE_DIR, 'bootstrap-assets');
 const RAW_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.raw.xlsx');
 const CLEANED_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.cleaned.xlsx');
 const CLEANUP_NOTES_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.notes.md');
+const DIGEST_SHOWCASE_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'ai-coding-agent-digest.sample.md');
 
 function safeReadJson(filePath, fallbackValue = null) {
   try {
@@ -70,37 +71,22 @@ function resolveCurrentMailboxAddress() {
   return ownerMailboxAddress;
 }
 
-function buildEmailShowcaseIntro(mailboxAddress) {
+function buildInboundEmailSetupHint(mailboxAddress) {
   if (mailboxAddress) {
     return [
-      '这个示例基于我刚验证过的真实链路。',
-      `这个实例当前的收件地址是 \`${mailboxAddress}\`。你直接给它发邮件，左侧会自动多出一个新会话。`,
-      '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
+      '补充一个和邮件相关的提示：如果你想测试“发邮件到这个实例会自动开新会话”这条能力，先把你会用来发送的邮箱告诉我，我会先把它设成允许发件人；不然安全机制会先把邮件拦掉。',
+      `这个实例当前的收件地址是 \`${mailboxAddress}\`。`,
     ].join('\n\n');
   }
 
-  return [
-    '这个示例基于我刚验证过的真实链路。',
-    '实例启用邮箱接入后，你直接给它发邮件，左侧会自动多出一个新会话。',
-    '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
-  ].join('\n\n');
+  return '补充一个和邮件相关的提示：如果你想测试“发邮件到这个实例会自动开新会话”这条能力，先把你会用来发送的邮箱告诉我，我会先把它设成允许发件人；不然安全机制会先把邮件拦掉。';
 }
 
-function buildEmailShowcaseUserMessage(mailboxAddress) {
+function buildDigestShowcaseIntro() {
   return [
-    'Inbound email.',
-    '- From: jiujianian@gmail.com',
-    '- Subject: 真实能力验证邮件',
-    '- Date: (no date)',
-    '- Message-ID: (no message id)',
-    '',
-    'User message:',
-    '这是一次真实能力验证邮件。',
-    '',
-    mailboxAddress
-      ? `如果链路正常，发到 ${mailboxAddress} 的邮件会自动进到一个新会话里。`
-      : '如果链路正常，发到这个实例地址的邮件会自动进到一个新会话里。',
-  ].join('\n');
+    '这是一个已经实测跑通过的样例。',
+    '这个流程不是只展示“能做摘要”或“能发邮件”其中一项，而是把两件事接成一条真实交付链路：先整理最近行业热点，再把结果发到指定邮箱。',
+  ].join('\n\n');
 }
 
 function getOwnerBootstrapSessionDefinitions() {
@@ -113,6 +99,12 @@ function getOwnerBootstrapSessionDefinitions() {
       name: 'Welcome',
       pinned: true,
       sidebarOrder: 1,
+      extraMessages: [
+        {
+          role: 'assistant',
+          content: buildInboundEmailSetupHint(mailboxAddress),
+        },
+      ],
     },
     {
       appId: BASIC_CHAT_APP_ID,
@@ -165,22 +157,33 @@ function getOwnerBootstrapSessionDefinitions() {
     },
     {
       appId: BASIC_CHAT_APP_ID,
-      externalTriggerId: 'owner_bootstrap:showcase:instance_email',
-      name: '[示例] 发一封邮件到这个实例，会自动开一个新会话',
+      externalTriggerId: 'owner_bootstrap:showcase:digest_email_delivery',
+      name: '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
       pinned: true,
       sidebarOrder: 3,
       messages: [
         {
           role: 'assistant',
-          content: buildEmailShowcaseIntro(mailboxAddress),
+          content: buildDigestShowcaseIntro(),
         },
         {
           role: 'user',
-          content: buildEmailShowcaseUserMessage(mailboxAddress),
+          content: '我想跟踪 AI 编程助手 / remote agent 这类行业热点。先给我一版今天的摘要，并发到我的收件邮箱；如果格式合适，再改成每天早上 8 点。',
         },
         {
           role: 'assistant',
-          content: '这就是邮件进来后的实际起点。你自己试的时候，不用先进来手动新建聊天；邮件到达后我会先把它挂成单独会话，再继续处理。',
+          content: [
+            '这条链路我已经实际跑通过了。我先把今天这份摘要发到指定邮箱，同时把同一份正文放成附件供你直接看。',
+            '如果你确认格式和收件都没问题，我再把它固化成每天自动发。',
+          ].join('\n\n'),
+          attachments: [
+            {
+              localPath: DIGEST_SHOWCASE_ASSET_PATH,
+              originalName: 'AI 编程助手热点摘要（样例）.md',
+              mimeType: 'text/markdown',
+              renderAs: 'file',
+            },
+          ],
         },
       ],
     },
@@ -249,14 +252,21 @@ async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint
     const starterMessages = Array.isArray(definition.messages) && definition.messages.length > 0
       ? definition.messages
       : (app.welcomeMessage ? [{ role: 'assistant', content: app.welcomeMessage }] : []);
-    const starterEvents = await buildMessageEvents(session.id, starterMessages);
+    const extraMessages = Array.isArray(definition.extraMessages) ? definition.extraMessages : [];
+    const starterEvents = await buildMessageEvents(session.id, [...starterMessages, ...extraMessages]);
     if (starterEvents.length > 0) {
       await appendEvents(session.id, starterEvents);
       session = await getSession(session.id) || session;
     }
   } else if (appendLegacyWelcomeHint && definition.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID) {
-    await appendEvents(session.id, [messageEvent('assistant', LEGACY_WELCOME_SHOWCASE_HINT)]);
-    session = await getSession(session.id) || session;
+    const appendedEvents = await buildMessageEvents(session.id, [
+      { role: 'assistant', content: LEGACY_WELCOME_SHOWCASE_HINT },
+      ...(Array.isArray(definition.extraMessages) ? definition.extraMessages : []),
+    ]);
+    if (appendedEvents.length > 0) {
+      await appendEvents(session.id, appendedEvents);
+      session = await getSession(session.id) || session;
+    }
   }
 
   if (Number.isInteger(definition.sidebarOrder) && definition.sidebarOrder > 0) {

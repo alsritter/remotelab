@@ -180,7 +180,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   assert.deepEqual(sessionNames, [
     'Welcome',
     '[示例] 上传一份表格，我把清洗后的文件回给你',
-    '[示例] 发一封邮件到这个实例，会自动开一个新会话',
+    '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
   ], 'starter sessions should appear in the intended sidebar order');
 
   for (const [index, session] of (list.json?.sessions || []).entries()) {
@@ -203,6 +203,15 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const welcomeContent = await resolveEventContent(port, welcomeSession.id, welcomeEvent, { Cookie: ownerCookie });
   assert.match(welcomeContent, /我是 Rowan|先接手、再梳理、再推进执行/u, 'welcome copy should come from the built-in Welcome app');
   assert.match(welcomeContent, /左侧我已经先放了 2 个真实跑通过的示例会话/u, 'welcome copy should point owners to the verified showcase sessions');
+  const welcomeAssistantMessages = await Promise.all(
+    (events.json?.events || [])
+      .filter((event) => event.type === 'message' && event.role === 'assistant')
+      .map((event) => resolveEventContent(port, welcomeSession.id, event, { Cookie: ownerCookie })),
+  );
+  assert.ok(
+    welcomeAssistantMessages.some((content) => /发件邮箱|允许发件人|安全机制/u.test(content)),
+    'welcome bootstrap should warn that inbound email tests need the sender address allowlisted first',
+  );
 
   const fileShowcaseSession = list.json?.sessions?.[1];
   const fileShowcaseEvents = await request(port, 'GET', `/api/sessions/${fileShowcaseSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
@@ -224,15 +233,26 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const downloadedBuffer = Buffer.from(await fileDownloadRes.arrayBuffer());
   assert.equal(downloadedBuffer.subarray(0, 2).toString('hex'), '504b', 'downloaded showcase spreadsheet should keep its xlsx zip signature');
 
-  const emailShowcaseSession = list.json?.sessions?.[2];
-  const emailShowcaseEvents = await request(port, 'GET', `/api/sessions/${emailShowcaseSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
-  assert.equal(emailShowcaseEvents.status, 200, 'email showcase session events should load');
-  const emailShowcaseMessages = (emailShowcaseEvents.json?.events || []).filter((event) => event.type === 'message');
-  assert.equal(emailShowcaseMessages.length, 3, 'email showcase should keep the expected three-message transcript');
-  const emailIntroContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[0], { Cookie: ownerCookie });
-  const emailUserContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[1], { Cookie: ownerCookie });
-  assert.match(emailIntroContent, /自动多出一个新会话/u, 'email showcase should explain the automatic session behavior');
-  assert.match(emailUserContent, /Inbound email\./u, 'email showcase should mirror the actual inbound email session format');
+  const digestShowcaseSession = list.json?.sessions?.[2];
+  const digestShowcaseEvents = await request(port, 'GET', `/api/sessions/${digestShowcaseSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
+  assert.equal(digestShowcaseEvents.status, 200, 'digest showcase session events should load');
+  const digestShowcaseMessages = (digestShowcaseEvents.json?.events || []).filter((event) => event.type === 'message');
+  assert.equal(digestShowcaseMessages.length, 3, 'digest showcase should keep the expected three-message transcript');
+  const digestIntroContent = await resolveEventContent(port, digestShowcaseSession.id, digestShowcaseMessages[0], { Cookie: ownerCookie });
+  const digestUserContent = await resolveEventContent(port, digestShowcaseSession.id, digestShowcaseMessages[1], { Cookie: ownerCookie });
+  const digestAssistantMessage = [...digestShowcaseMessages].reverse().find((event) => event.role === 'assistant' && Array.isArray(event.attachments) && event.attachments.length > 0);
+  assert.match(digestIntroContent, /真实交付链路|指定邮箱/u, 'digest showcase should explain the combined summary-and-delivery flow');
+  assert.match(digestUserContent, /每天早上 8 点|行业热点/u, 'digest showcase should demonstrate a recurring summary ask');
+  assert.equal(digestAssistantMessage?.attachments?.length, 1, 'digest showcase should attach the delivered summary body');
+  const digestShowcaseContent = await resolveEventContent(port, digestShowcaseSession.id, digestAssistantMessage, { Cookie: ownerCookie });
+  assert.match(digestShowcaseContent, /实际跑通过|固化成每天自动发/u, 'digest showcase should end with a concrete delivery handoff');
+  const digestDownloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${digestAssistantMessage.attachments[0].assetId}/download`, {
+    method: 'GET',
+    headers: { Cookie: ownerCookie },
+  });
+  assert.equal(digestDownloadRes.status, 200, 'digest showcase attachment should be downloadable');
+  const digestBody = await digestDownloadRes.text();
+  assert.match(digestBody, /今日最重要结论|Claude Code|Codex/u, 'digest showcase attachment should contain a readable summary body');
 
   const secondList = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
   assert.equal(secondList.status, 200, 'owner should be able to reload the session list');

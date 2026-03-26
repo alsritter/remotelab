@@ -49,6 +49,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Implication: server-side bootstrap should guarantee an active Welcome session for owner-first entry, and onboarding must be resilient to legacy blank archived sessions
 - Promote to: onboarding implementation, welcome-session regression tests
 
+### 2026-03-26 — showcase demos should combine real workflow value and explain mail gating up front
+
+- Source: direct onboarding feedback after reviewing seeded starter sessions
+- User slice: first-time owner trying to infer what RemoteLab can reliably automate from example transcripts
+- Observed friction or ask: separate one-capability demos understate value; a stronger showcase combines content collection/summarization with delivery, and the inbound-email affordance currently hides the allowlist prerequisite
+- Signal: starter examples should prefer believable end-to-end flows such as “summarize current industry signals and send the digest to a target inbox” instead of showcasing isolated primitives; any mail-to-instance affordance should warn users to register their sender address before testing so the first attempt does not get silently filtered
+- Product implication: onboarding examples should teach compound outcome-oriented workflows, while Welcome should surface the sender-allowlist safety gate in plain language before users try inbound email
+- Promote to: welcome/bootstrap copy, starter-session design, email-onboarding defaults
+
 ### 2026-03-25 — mainstream automation framing beats orchestration-first framing
 
 - Source: synthesis of recent user interviews and product review
